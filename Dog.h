@@ -15,18 +15,33 @@
 // Unless otherwise noted, all "positions" are relative to body origin...update this
 
 class RobotDog {
-    #define LEG_UR_C_ANG_OFS  (4)
-    #define LEG_UR_S_ANG_OFS  (-2)
-    #define LEG_UR_E_ANG_OFS  (9)
-    #define LEG_BR_C_ANG_OFS  (-2.5)
-    #define LEG_BR_S_ANG_OFS  (3)
-    #define LEG_BR_E_ANG_OFS  (3.5)
-    #define LEG_BL_C_ANG_OFS  (-8)
-    #define LEG_BL_S_ANG_OFS  (1.5)
-    #define LEG_BL_E_ANG_OFS  (0.5)
-    #define LEG_UL_C_ANG_OFS  (5)
-    #define LEG_UL_S_ANG_OFS  (-4)
-    #define LEG_UL_E_ANG_OFS  (-3.5)
+    // #define LEG_UR_C_ANG_OFS  (4)
+    // #define LEG_UR_S_ANG_OFS  (-2)
+    // #define LEG_UR_E_ANG_OFS  (9)
+    // #define LEG_BR_C_ANG_OFS  (-2.5)
+    // #define LEG_BR_S_ANG_OFS  (3)
+    // #define LEG_BR_E_ANG_OFS  (3.5)
+    // #define LEG_BL_C_ANG_OFS  (-8)
+    // #define LEG_BL_S_ANG_OFS  (1.5)
+    // #define LEG_BL_E_ANG_OFS  (0.5)
+    // #define LEG_UL_C_ANG_OFS  (5)
+    // #define LEG_UL_S_ANG_OFS  (-4)
+    // #define LEG_UL_E_ANG_OFS  (-3.5)
+    #define LEG_UR_C_ANG_OFS  (0)
+    #define LEG_UR_S_ANG_OFS  (-3)
+    #define LEG_UR_E_ANG_OFS  (6)
+
+    #define LEG_BR_C_ANG_OFS  (0)
+    #define LEG_BR_S_ANG_OFS  (3.5)
+    #define LEG_BR_E_ANG_OFS  (1)
+
+    #define LEG_BL_C_ANG_OFS  (0)
+    #define LEG_BL_S_ANG_OFS  (1)
+    #define LEG_BL_E_ANG_OFS  (-5)
+
+    #define LEG_UL_C_ANG_OFS  (0)
+    #define LEG_UL_S_ANG_OFS  (-1)
+    #define LEG_UL_E_ANG_OFS  (-8)
 
     #define DEFAULT_LEG_HEIGHT 100 //mm
     #define WIDTH2 60 // half total width
@@ -62,6 +77,21 @@ class RobotDog {
     Point centroid_oBfG;        // Centroid location in GROUND frame relative to BODY origin
     Rot body_orientation;       // Actual orientation of the body, relative to stagnant ground frame
 
+    // Servo Calibration Tables
+    #define NUM_TABLE_ELEM 19
+    int table_chest_ur[NUM_TABLE_ELEM]    = {1320,1433,1545,1658,1770,1900,2030,2160,2290,2420,2520,2620,2720,2820,2920,3053,3185,3318,3450};
+    int table_shoulder_ur[NUM_TABLE_ELEM] = {1380,1480,1605,1710,1830,1960,2065,2195,2315,2440,2545,2655,2770,2875,2985,3110,3210,3330,3440};
+    int table_elbow_ur[NUM_TABLE_ELEM]    = {1410,1530,1640,1760,1870,1980,2110,2220,2330,2440,2550,2660,2770,2880,2990,3080,3240,3349,3459};
+    int table_chest_br[NUM_TABLE_ELEM]    = {1430,1548,1665,1783,1900,2004,2108,2212,2316,2420,2536,2652,2768,2884,3000,3122,3245,3367,3490};
+    int table_shoulder_br[NUM_TABLE_ELEM] = {1380,1500,1620,1720,1850,1980,2105,2210,2325,2440,2540,2665,2800,2900,3030,3150,3255,3360,3475};
+    int table_elbow_br[NUM_TABLE_ELEM]    = {1420,1505,1600,1720,1830,1950,2060,2200,2320,2440,2550,2660,2775,2890,3000,3120,3240,3349,3459};
+    int table_chest_bl[NUM_TABLE_ELEM]    = {1370,1490,1610,1730,1850,1958,2066,2174,2282,2390,2498,2606,2714,2822,2930,3042,3155,3267,3380};
+    int table_shoulder_bl[NUM_TABLE_ELEM] = {1340,1450,1560,1690,1805,1930,2060,2180,2320,2440,2555,2670,2785,2895,3000,3110,3230,3340,3455};
+    int table_elbow_bl[NUM_TABLE_ELEM]    = {1387,1498,1614,1750,1855,1980,2110,2210,2330,2440,2550,2690,2795,2920,3020,3150,3260,3380,3480};
+    int table_chest_ul[NUM_TABLE_ELEM]    = {1350,1460,1570,1680,1790,1908,2026,2144,2262,2380,2490,2600,2710,2820,2930,3055,3180,3305,3430};
+    int table_shoulder_ul[NUM_TABLE_ELEM] = {1370,1480,1600,1715,1840,1950,2080,2190,2320,2440,2560,2680,2790,2900,3010,3140,3245,3345,3460};
+    int table_elbow_ul[NUM_TABLE_ELEM]    = {1387,1498,1614,1700,1810,1940,2060,2175,2315,2440,2560,2680,2780,2915,3020,3125,3240,3340,3445};
+
 public:
     RobotDog() {
         // Set up legs
@@ -70,21 +100,26 @@ public:
         leg[2] = &leg_bl;
         leg[3] = &leg_ul;
 
-        COM = Point(3, 0, 9.5);
+        // COM = Point(3, 0, 9.5);
+        COM = Point(0,0,0);
 
         leg_ur = DogLeg(&servo_driver,  0,  1,  2, false, false, &body_orientation, Point( LENGTH2,  WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
+        leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
         leg_ur.calibrateServos(LEG_UR_C_ANG_OFS, LEG_UR_S_ANG_OFS, LEG_UR_E_ANG_OFS);
         leg_ur.setCentroidRef(&centroid_oBfG);
 
         leg_br = DogLeg(&servo_driver,  4,  5,  6, false,  true, &body_orientation, Point(-LENGTH2,  WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
+        leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
         leg_br.calibrateServos(LEG_BR_C_ANG_OFS, LEG_BR_S_ANG_OFS, LEG_BR_E_ANG_OFS);
         leg_br.setCentroidRef(&centroid_oBfG);
 
         leg_bl = DogLeg(&servo_driver,  8,  9, 10,  true,  true, &body_orientation, Point(-LENGTH2, -WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
+        leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
         leg_bl.calibrateServos(LEG_BL_C_ANG_OFS, LEG_BL_S_ANG_OFS, LEG_BL_E_ANG_OFS);
         leg_bl.setCentroidRef(&centroid_oBfG);
 
         leg_ul = DogLeg(&servo_driver, 12, 13, 14,  true, false, &body_orientation, Point( LENGTH2, -WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
+        leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
         leg_ul.calibrateServos(LEG_UL_C_ANG_OFS, LEG_UL_S_ANG_OFS, LEG_UL_E_ANG_OFS);
         leg_ul.setCentroidRef(&centroid_oBfG);
 
@@ -210,7 +245,7 @@ public:
             }
         }
         
-        if (!num_anchored) {
+        if (num_anchored == 0) {
             doError(2);
             return;
         } 
@@ -294,7 +329,7 @@ public:
         Point push_height;
 
         // Movement Request
-        double *dx;
+        double *dx; // These are pointers. They are updated externally and read via getRequested___()
         double *dy;
         double *dyaw;
         Frame frame; // Frame that the movement request was provided in
@@ -324,8 +359,8 @@ public:
             body_orientation = body_orientation_ref;
 
             default_height = Point(0, 0, 110);
-            raise_height = Point(0, 0, 20);
-            push_height = Point(0, 0, 7);
+            raise_height = Point(0, 0, 35);
+            push_height = Point(0, 0, 15);
 
             frame = Frame::BODY;
             state = 0;
@@ -336,7 +371,7 @@ public:
             return Rot(0, 0, body_orientation->z);
         }
 
-        // Desired position in ground frame
+        // Return Desired position in ground frame
         Point getRequestedLegPosition(int i) {
             Rot r = getRequestedRot() + getBodyYaw();
             Point dp = getRequestedTrans();
@@ -346,7 +381,7 @@ public:
             return default_leg_position[i] / r + dp;
         }
 
-        // Unmoved position in ground frame
+        // Return basic position. in current heading
         Point getDefaultLegPosition(int i) {
             return default_leg_position[i] / getBodyYaw();
         }
@@ -374,15 +409,113 @@ public:
     // Trotting
     TrottingInfo trot_info;
 
+    // Register Request pointers
     void beginTrot(double *x, double *y, double *yaw) {
         trot_info = TrottingInfo(x, y, yaw, &body_orientation);
         trot_info.timer.reset();
     }
 
+    // Register frame in which requests are made
     void setTrotFrame(Frame frame) {
         trot_info.frame = frame;
     }
 
+    // Algorithm 2 - 2 states
+    void trot() {
+        Rot desired_orientation = body_orientation*0.5;
+        desired_orientation.z = body_orientation.z;
+        //Serial.print("desired orient: "); desired_orientation.print();
+
+        switch (trot_info.state) {
+            case 0: {// Kick legs out, push body forward; maintain balance
+                if (trot_info.begin_state) {
+
+                    // Serial.println("State 1: Kick Leg");
+                    int period = 400;
+
+                    // Kick 2 feet out
+                    for (int i = 0; i < NUM_LEGS; i++) {
+                        if (trot_info.legIsSwinging(i)) {
+                            leg[i]->setState(CoordinationState::FIXED);
+                            leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i) + trot_info.raise_height, 
+                                                              Frame::GROUND, period*0.99);
+                        } else {
+                            leg[i]->setState(CoordinationState::ANCHORED);
+                        }
+                    }
+                    // Push Body Forward and up
+                    setFromCentroid(desired_orientation + trot_info.getRequestedRot()/2, 
+                                    trot_info.default_height + trot_info.getRequestedTrans(),// + trot_info.push_height, 
+                                    Frame::GROUND, period * 0.99);
+                    
+                    trot_info.timer.reset(period);
+                    trot_info.begin_state = false;
+                    break;
+                }
+               // maintain balance
+
+                // Finished. Switch state.
+                if (trot_info.timer.timeOut()) {
+                    trot_info.state = 1;
+                    trot_info.begin_state = true;
+                } else {
+                    break;
+                }
+            }
+            case 1: {// Setting feet down
+                if (trot_info.begin_state) {
+                    // Serial.println("State 2: Return Leg");
+                    int period = 400;
+
+                    // Place feet on floor
+                    for (int i = 0; i < NUM_LEGS; i++) {
+                        if (trot_info.legIsSwinging(i)) {
+
+                            leg[i]->setState(CoordinationState::FIXED);
+                            leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i), 
+                                                              Frame::GROUND, period * 0.99);
+                            // leg[i]->setState(CoordinationState::FLOATING);
+                            // leg[i]->setToPositionFromBody(trot_info.getRequestedLegPosition(i) - trot_info.default_height, 
+                            //                               Frame::GROUND, period*0.99);
+                        }
+                    }
+                    // Continue Pushing Body
+                    setFromCentroid(desired_orientation + trot_info.getRequestedRot(), 
+                                    trot_info.default_height + trot_info.getRequestedTrans(), 
+                                    Frame::GROUND, period * 0.99); // move dog body up a bit
+                    
+                    trot_info.timer.reset(period);
+                    trot_info.begin_state = false;
+                    break;
+                }
+
+                // Check if legs have hit the ground. Also maintain balance.
+                bool legs_hit_ground = false;
+                for (int i = 0; i < NUM_LEGS; i++) {
+                    if (trot_info.legIsSwinging(i)) {
+                        if ((leg[i]->getCurrentFootPositionFromCentroid(Frame::GROUND)).z < 1.5)
+                            legs_hit_ground = true;
+                    }
+                }
+
+
+                // Legs have completed trajectory. Switch to other legs
+                if (trot_info.timer.timeOut() || legs_hit_ground) {
+                    trot_info.state = 0;
+                    trot_info.begin_state = true;
+                    trot_info.switchPhase();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        operate();Serial.println("");
+    }
+
+
+
+/*
     void trot() {
         Rot desired_orientation = body_orientation*0.9;
         desired_orientation.z = body_orientation.z;
@@ -534,7 +667,7 @@ public:
 
         operate();
     }
-
+*/
     bool fixedLegPresent() {
         for (int i = 0; i < NUM_LEGS; i++) {
             if (leg[i]->isFixed()) {
@@ -606,6 +739,10 @@ public:
 
     DogLeg *getLeg(int i) {
         return leg[i];
+    }
+
+    RServoDriver *getServoDriver() {
+        return &servo_driver;
     }
 };
 

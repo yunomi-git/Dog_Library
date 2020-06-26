@@ -99,6 +99,7 @@ class DogLeg {
     #define L_UPPERARM    75   // mm
     #define FOOT_RADIUS   5     // mm   
     #define L_DEFAULT_HEIGHT 100 // mm
+    #define L_CHEST 0 // mm
 
     #define UPDATE_RATE 5 // ms
     #define TRACKING_SPEED 40 // mm/s Speed at which fixed leg attempts to correct itself
@@ -226,6 +227,12 @@ public:
         servo_driver->setOffset(chest_chan, CHEST_OFFSET_MAIN + off1);
     }
 
+    void setSignalTables(int *chest_table, int *shoulder_table, int *elbow_table) {
+    	servo_driver->getServo(chest_chan)->setTable(chest_table);
+    	servo_driver->getServo(shoulder_chan)->setTable(shoulder_table);
+    	servo_driver->getServo(elbow_chan)->setTable(elbow_table);
+    }
+
     void setCentroidRef(Point *centroid_ref) {
         centroid_oBfG = centroid_ref;
     }
@@ -349,6 +356,49 @@ private:
         }
   	}
 
+        bool inverseKinematics2(double x, double y, double z) {
+        // x_ and z_ are the x and z coordinates in the reference plane coincident with the arm plane
+        double x_ = x;
+        double z_ = sqrt(y*y + z*z - L_CHEST*L_CHEST);
+
+        // Converts values to state
+        double l_arm_eff = sqrt(x_*x_ + z_*z_);
+        double angle_shoulder_eff = atan2(x_, z_) RAD;
+        double angle_chest = atan2(-y, -z) RAD + atan2(L_CHEST, z_) - 90;
+
+        // Solve for shoulder, elbow angles
+        // Angle from forearm to upper arm. 
+        double angle_elbow_relative;
+        // Angle of shoulder
+        double angle_shoulder;
+        
+        if (L_FOREARM == L_UPPERARM) { // Optimization if arm lengths are the same
+            angle_elbow_relative = 2*asin(l_arm_eff / (2 * L_FOREARM)) RAD;
+            angle_shoulder = angle_shoulder_eff - (180.0 - angle_elbow_relative) * 0.5;
+        } else {
+            // Note: acos is always positive, so joint never inverts!
+            angle_elbow_relative = acos((L_FOREARM*L_FOREARM + L_UPPERARM*L_UPPERARM - l_arm_eff*l_arm_eff) /(2 * L_FOREARM * L_UPPERARM)) RAD; 
+            angle_shoulder = angle_shoulder_eff - asin(L_FOREARM / l_arm_eff * sin(angle_elbow_relative DEG)) RAD;
+        }
+
+        // Angle of elbow
+        double angle_elbow = 180 + angle_shoulder - angle_elbow_relative;
+        angle_elbow -= WISHBONE_ANGLE; // To get servo angle
+
+        // Save candidate info
+        if (WITHIN(angle_chest, -75, 75) && 
+            WITHIN(angle_elbow, -185, -67) && 
+            WITHIN(angle_shoulder - angle_elbow, 20, 160)) {
+
+            foot_candidate_info.chest_angle = angle_chest;
+            foot_candidate_info.shoulder_angle = angle_shoulder;
+            foot_candidate_info.elbow_angle = angle_elbow;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     // Moves foot to a point in the BODY frame relative to the SHOULDER position.
     bool inverseKinematics(Point p) {
     	return inverseKinematics(p.x, p.y, p.z);
@@ -424,8 +474,8 @@ public:
         goal_foot_pos_of = new_foot_pos_oBf;
         trajectory_f = goal_foot_pos_of - getCurrentFootPositionFromCentroid(Frame::GROUND);
         traj_start_time = millis();
-        traj_total_time = max(time, trajectory_f.norm() / (MAX_SPEED/1000.0));;
 
+        traj_total_time = max(time, trajectory_f.norm() / (MAX_SPEED/1000.0));;
     }
 
     // Moves the foot by the amount relative to its original position
@@ -464,15 +514,15 @@ public:
             // PRINT_POINT("track error: ", tracking_error_fG)
 
             // First account for tracking error
-            Point candidate_foot_position_oCfG = goal_foot_pos_of - tracking_error_fG * 0.1;
+            Point candidate_foot_position_oCfG = goal_foot_pos_of - tracking_error_fG * 0.0;
 
-            // Check if trajectory exists
+            // Check if trajectory exists (currently in a trajectory)
             if (trajectory_f) {
                 // Serial.println("Traj exists");
                 // Align main trajectory with drifted error
                 trajectory_f = total_trajectory_fG.unit() * trajectory_f.norm(); 
 
-                // Percentage of trajectory travelled
+                // Fraction of trajectory travelled. 0 to 1. 1 means complete
                 double expected_progress; 
                 if (traj_total_time == TIME_INSTANT) { // Trajectory is instantaneous
                     expected_progress = 1;
@@ -480,10 +530,13 @@ public:
                     expected_progress = (millis() - traj_start_time)/traj_total_time;
                 }
 
+                Serial.print(expected_progress); Serial.print(", ");
+
                 // Trajectory is finished. Reset.
                 if (expected_progress >= 1) {
                     expected_progress = 1.0;
                     trajectory_f = POINT_ZERO;
+
                 }
 
                 // PRINT_POINT("trajectory (g): ", trajectory_f)

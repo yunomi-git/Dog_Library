@@ -10,8 +10,6 @@
 #include "Rot.h"
 #include "Point.h"
 
-// Wrapper to store and access IMU values.
-// original bno architecture can be accessed by [imu].bno
 
 struct IMU {
     #define MAX_HISTORY_SIZE 15
