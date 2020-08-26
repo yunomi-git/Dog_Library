@@ -134,8 +134,10 @@ public:
     void begin() {
         servo_driver.defaultStartup();
 
-        bno_imu.setCollectionMode(IMU::CONTINUOUS);
-        bno_imu.defaultStartup();
+        if (use_imu) {
+            bno_imu.setCollectionMode(IMU::CONTINUOUS);
+            bno_imu.defaultStartup();
+        }
 
         leg_update_timer.reset(LEG_UPDATE_PERIOD);
         imu_update_timer.reset(IMU_UPDATE_PERIOD);
@@ -150,7 +152,7 @@ public:
     }
 
     // "heights" are relative to body origin
-    void gotoLegHeights(double h1, double h2, double h3, double h4) {
+    void gotoLegHeights(float h1, float h2, float h3, float h4) {
         leg[0]->setToPositionFromShoulder(Point(0, 0, h1), Frame::BODY);
         leg[1]->setToPositionFromShoulder(Point(0, 0, h2), Frame::BODY);
         leg[2]->setToPositionFromShoulder(Point(0, 0, h3), Frame::BODY);
@@ -170,7 +172,7 @@ public:
     // @param frame:              Reference frame in which dp is given. If BODY is chosen, movement based on *DESIRED* body orientation.
     // @param time:               Total movement time desired to move the foot from its current position to the new position.
     //                            Set to 0/TIME_INSTANT for max speed.
-    void setFromPosition(Rot dr, Point dp, Frame frame, double time=TIME_INSTANT) {
+    void setFromPosition(Rot dr, Point dp, Frame frame, float time=TIME_INSTANT) {
         Rot r = body_orientation + dr; // Desired orientation
         desired_orientation = r;
         // Convert everything to GROUND frame
@@ -200,7 +202,7 @@ public:
     // @param frame:              Reference frame in which dp is given. If BODY is chosen, movement based on *DESIRED* body orientation.
     // @param time:               Total movement time desired to move the foot from its current position to the new position.
     //                            Set to 0/TIME_INSTANT for max speed.
-    void setFromCentroid(Rot r, Point p_oCf, Frame frame, double time=TIME_INSTANT) {
+    void setFromCentroid(Rot r, Point p_oCf, Frame frame, float time=TIME_INSTANT) {
         // Calculate distance to move, in GROUND frame
         Point dp_fB;
         updateCentroid();
@@ -233,7 +235,7 @@ public:
     // z height is default leg heigh
     void updateCentroid() {
         int num_anchored = 0;
-        double lowest_leg_height = 0;
+        float lowest_leg_height = 0;
         Point centroid = POINT_ZERO;
         for (int i = 0; i < NUM_LEGS; i++) {
             if (leg[i]->isAnchored()) {
@@ -307,7 +309,7 @@ public:
             for (int i = 0; i < NUM_LEGS; i++) {
                 if(!(leg[i]->operate())) {
                     leg_success = false;
-                    doError(1);
+                    //doError(1);
                     break;
                 }
             }
@@ -329,9 +331,9 @@ public:
         Point push_height;
 
         // Movement Request
-        double *dx; // These are pointers. They are updated externally and read via getRequested___()
-        double *dy;
-        double *dyaw;
+        float *dx; // These are pointers. They are updated externally and read via getRequested___()
+        float *dy;
+        float *dyaw;
         Frame frame; // Frame that the movement request was provided in
 
         // State
@@ -342,7 +344,7 @@ public:
 
         TrottingInfo() {}
 
-        TrottingInfo(double *x, double *y, double *yaw, Rot *body_orientation_ref) {
+        TrottingInfo(float *x, float *y, float *yaw, Rot *body_orientation_ref) {
             default_leg_position[0] = Point( LENGTH2,  WIDTH2, 0); // All these need to be variablized
             default_leg_position[1] = Point(-LENGTH2,  WIDTH2, 0);
             default_leg_position[2] = Point(-LENGTH2, -WIDTH2, 0);
@@ -410,7 +412,7 @@ public:
     TrottingInfo trot_info;
 
     // Register Request pointers
-    void beginTrot(double *x, double *y, double *yaw) {
+    void beginTrot(float *x, float *y, float *yaw) {
         trot_info = TrottingInfo(x, y, yaw, &body_orientation);
         trot_info.timer.reset();
     }
@@ -750,7 +752,7 @@ public:
 #endif
 
    // Height in the ground frame
-    // double getCurrentHeight() {
+    // float getCurrentHeight() {
     //     int num_anchored = 0;
     //     Point centroid = POINT_ZERO;
     //     for (int i = 0; i < NUM_LEGS; i++) {
@@ -769,7 +771,7 @@ public:
     // Body moves by gait length.
     // Leg moves by 2x gait length
     // FUTURE: must account for if leg does not start on ground..."current height"?
-//     void step(double direction_yaw, double gait_length) {
+//     void step(float direction_yaw, float gait_length) {
 //         if (gait_state == 1) {
 //             leg[0]->setAnchored(true);
 //             leg[1]->setAnchored(false);
@@ -811,7 +813,7 @@ public:
 //         gait_state *= -1;
 //     }
 
-//     void wave_step(double direction_yaw, double gait_length) {
+//     void wave_step(float direction_yaw, float gait_length) {
 //     // Serial.println("wave");
 //         for (int i = 0; i < NUM_LEGS; i++) {
 //             if (i == wave_state) {
@@ -855,7 +857,7 @@ public:
 
 
 
-    // void setToOrientation(Rot new_orientation, double time=TIME_INSTANT) {
+    // void setToOrientation(Rot new_orientation, float time=TIME_INSTANT) {
     //     body_orientation = new_orientation;
     //     // Calculate leg positions and check if they're valid
     //     for (int i = 0; i < NUM_LEGS; i++) {
@@ -868,7 +870,7 @@ public:
     // }
 
     // // Moves origin by certain amount in ground frame
-    // void moveByPosition(Point dp, double time=TIME_INSTANT) {
+    // void moveByPosition(Point dp, float time=TIME_INSTANT) {
     //     // Calculates new positions
     //     for (int i = 0; i < NUM_LEGS; i++) {
     //         if (leg[i]->isAnchored())

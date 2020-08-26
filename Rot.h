@@ -10,15 +10,15 @@
 // CCW=+
 
 struct Rot {
-    double x; // roll=x
-    double y; // pitch=y
-    double z; // yaw=z
+    float x; // roll=x
+    float y; // pitch=y
+    float z; // yaw=z
 
 public:
     // Constructors
     Rot() {x = 0; y = 0; z = 0;}
 
-    Rot(double nx, double ny, double nz) {
+    Rot(float nx, float ny, float nz) {
      	x = nx; y = ny; z = nz;
     }
 
@@ -38,15 +38,15 @@ public:
     }
 
     // Constant
-    Rot operator*(double k) {
+    Rot operator*(float k) {
         return Rot(k*x, k*y, k*z);
     }
 
-    Rot operator/(double k) {
+    Rot operator/(float k) {
         return Rot(x/k, y/k, z/k);
     }
 
-    void operator*=(double k) {
+    void operator*=(float k) {
         x *= k;
         y *= k;
         z *= k;

@@ -10,15 +10,15 @@
 // A point in 3d cartesian space
 
 struct Point {
-    double x;
-    double y;
-    double z;
+    float x;
+    float y;
+    float z;
 
 public:
     // Constructors
     Point() {x = 0; y = 0; z = 0;}
 
-    Point(double nx, double ny, double nz) {
+    Point(float nx, float ny, float nz) {
      	x = nx; y = ny; z = nz;
     }
 
@@ -77,28 +77,28 @@ public:
     }
 
     // Constant
-    Point operator*(double k) {
+    Point operator*(float k) {
         return Point(k*x, k*y, k*z);
     }
 
-    Point operator/(double k) {
+    Point operator/(float k) {
         return Point(x/k, y/k, z/k);
     }
 
-    void operator*=(double k) {
+    void operator*=(float k) {
         x *= k;
         y *= k;
         z *= k;
     }
 
-    void operator/=(double k) {
+    void operator/=(float k) {
         x /= k;
         y /= k;
         z /= k;
     }
 
     // Etc Operator
-    double norm() {
+    float norm() {
         return sqrt(x*x+y*y+z*z);
     }
 
@@ -117,7 +117,7 @@ public:
     }
 
     // Rotate point CCW about x axis by <angle> degrees
-    Point rotX(double angle) {
+    Point rotX(float angle) {
     	angle = angle DEG; // to radians
     	return Point(							   x,
     				 cos(angle) * y - sin(angle) * z,
@@ -125,7 +125,7 @@ public:
     }
 
     // Rotate point CCW about y axis by <angle> degrees
-    Point rotY(double angle) {
+    Point rotY(float angle) {
     	angle = angle DEG; // to radians
     	return Point(cos(angle) * x + sin(angle) * z,
     				 							   y,
@@ -133,7 +133,7 @@ public:
     }
 
      // Angle in deg
-    Point rotZ(double angle) {
+    Point rotZ(float angle) {
      	angle = angle DEG; // to radians
      	return Point(cos(angle) * x - sin(angle) * y,
      				 sin(angle) * x + cos(angle) * y,
@@ -144,7 +144,7 @@ public:
     // in GROUND/ABSOLUTE frame, 		x axis -> y axis -> z axis or,
     // in BODY/MOVING frame, 			z axis -> y axis -> x axis.
     // Note that x=roll, y=pitch, z=yaw and CCW is +.
-    Point rotate(double roll, double pitch, double yaw) {
+    Point rotate(float roll, float pitch, float yaw) {
     	return rotX(roll).rotY(pitch).rotZ(yaw);
     }
 
@@ -154,7 +154,7 @@ public:
 
     // Reverses the rotation from r->0
     // ie. Starting in orientation (roll, pitch, yaw), orient to (0,0,0)
-    Point inv_rotate(double roll, double pitch, double yaw) {
+    Point inv_rotate(float roll, float pitch, float yaw) {
         return rotZ(-yaw).rotY(-pitch).rotX(-roll);
     }
 

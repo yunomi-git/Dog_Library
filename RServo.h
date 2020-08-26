@@ -13,20 +13,20 @@ class RServo : public Servo {
 protected:
 	// Servo servo;
 	
-	double angle_max;
-	double angle_min;
+	float angle_max;
+	float angle_min;
 	int pwm_min;
 	int pwm_max;
 
-	double angle_offset; // Horn starting angle in deg CCW (RHR)
+	float angle_offset; // Horn starting angle in deg CCW (RHR)
 	bool reverse_direction;	// normal: CCW is + | reverse: CW is +
 
-	double angle_on;
-	double angle_off;
+	float angle_on;
+	float angle_off;
 public:
 	RServo() {}
 
-	RServo(double nangle_min, double nangle_max, int npwm_min, int npwm_max, double nspeed = 60) {
+	RServo(float nangle_min, float nangle_max, int npwm_min, int npwm_max, float nspeed = 60) {
 	 	angle_max = nangle_max;
 	 	angle_min = nangle_min;
 	 	pwm_max = npwm_max;
@@ -48,13 +48,13 @@ public:
 	// Reverses the direction of the servo.
 	// Returns true: CCW is + AKA normal | false: CW is +
 	bool reverseDirection() {
-		double temp = pwm_min;
+		float temp = pwm_min;
 		pwm_min = pwm_max;
 		pwm_max = temp;
 		return (pwm_max > pwm_min);
 	}
 
-	void setOffset(double offset) {
+	void setOffset(float offset) {
 		angle_max -= angle_offset;
 		angle_min -= angle_offset;
 		angle_offset = offset;
@@ -63,7 +63,7 @@ public:
 	}
 
 	// Sets the desired step count to that which most nearly corresponds with the angle
-	bool gotoAngle(double angle) {
+	bool gotoAngle(float angle) {
 		if (checkAngle(angle)) {
 			writeMicroseconds(angleToPwm(angle));
 			return true;
@@ -72,17 +72,17 @@ public:
 		}
 	}
 
-	bool checkAngle(double angle) {
+	bool checkAngle(float angle) {
 		return ((angle >= angle_min) && (angle <= angle_max));
 	}
 
 	// Returns the current angular position corresponding to the step position in deg
-	double getAngle() {
+	float getAngle() {
 		return pwmToAngle(readMicroseconds());
 	}
 
 	// Sets on and off state for "boolean" servo
-	void setStates(double ang_on, double ang_off) {
+	void setStates(float ang_on, float ang_off) {
 		angle_on = ang_on;
 		angle_off = ang_off;
 	}
@@ -96,11 +96,11 @@ public:
 	}
 
 	// Converters
-	int angleToPwm(double angle) {
+	int angleToPwm(float angle) {
 		return round(pwm_min + (angle - angle_min) * (pwm_max - pwm_min) / (angle_max - angle_min));
 	}
 
-	double pwmToAngle(int pwm) {
+	float pwmToAngle(int pwm) {
 		return angle_min + 1.0 * (pwm - pwm_min) * (angle_max - angle_min) / (pwm_max - pwm_min);
 	}
 
