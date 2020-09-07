@@ -1,5 +1,7 @@
 #include <RServoDriver.h>
 
+// Checks if all angles are correct
+
 RServoDriver driver;
 int sig;
 void setup() {
@@ -14,6 +16,10 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+}
+
+void send_to_angle() {
   if (Serial.available()) {
     sig = Serial.parseInt();
     if (sig != 0) {

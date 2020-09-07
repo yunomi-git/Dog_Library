@@ -54,6 +54,8 @@ void loop() {
   trot_x = joystick[0] * 10;
   trot_y = joystick[1] * 10;
   trot_yaw = joystick[3] * -5;
-  
+//  dog.printCentroid();
+//  dog.printLeg(2);
+
   dog.trot();
 }
