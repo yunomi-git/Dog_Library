@@ -1,2 +1,0 @@
-unsure what this file is..likely an old version
-most up to date walking is in the test folder
