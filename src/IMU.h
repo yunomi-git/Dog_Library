@@ -52,7 +52,7 @@ struct IMU {
     // Point position;
     // Point velocity;
 
-    // double timer;
+    // float timer;
 
 public:
     IMU() {cmode = SINGLE;}
@@ -171,8 +171,8 @@ public:
         Rot raw_orientation = getRawOrientation();
 
         // the "measured" yaw value
-        double IMU_z = raw_orientation.z;
-        double IMU_z_prev = orientation_info.getPrevHistoryValue(1).z;   // X output of IMU is actually rotation about z
+        float IMU_z = raw_orientation.z;
+        float IMU_z_prev = orientation_info.getPrevHistoryValue(1).z;   // X output of IMU is actually rotation about z
                                                         // TODO check that this is the correct value to use
 
         IMU_z += IMU_z_num_turns * 360;
@@ -192,7 +192,7 @@ public:
         gravity_info.updateHistory(getRawGravity());
 
         // Estimate position and velocity
-        // double dt = millis() - timer; // in ms
+        // float dt = millis() - timer; // in ms
         // velocity += lin_accel_info.value * dt/1000.0;
         // position += velocity * dt/1000.0;
         // timer = millis();

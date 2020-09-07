@@ -99,7 +99,7 @@ class DogLeg {
     #define L_UPPERARM    75   // mm
     #define FOOT_RADIUS   5     // mm   
     #define L_DEFAULT_HEIGHT 100 // mm
-    #define L_CHEST 0 // mm
+    #define L_CHEST_DEFAULT 13.97 // mm
 
     #define UPDATE_RATE 5 // ms
     #define TRACKING_SPEED 40 // mm/s Speed at which fixed leg attempts to correct itself
@@ -118,9 +118,11 @@ class DogLeg {
     // ==================================================
     // ============= Parameters =========================
     // ==================================================
-	double default_length;
+	float default_length;
     Point mounting_pos; // Mounting point relative to body origin IN BODY FRAME
     Point foot_pos_default; // in BODY frame, relative to shoulder
+
+    float L_CHEST;
 
     // ==================================================
     // ============= State ==============================
@@ -136,9 +138,9 @@ class DogLeg {
     // Body frame, relative to shoulder
     struct ikin_info {
         Point foot_pos; // Body frame, from shoulder
-    	double chest_angle;
-	    double shoulder_angle;
-	    double elbow_angle;
+    	float chest_angle;
+	    float shoulder_angle;
+	    float elbow_angle;
 
 	    ikin_info() {
             foot_pos = POINT_ZERO;
@@ -146,7 +148,7 @@ class DogLeg {
 	    	shoulder_angle = 0;
 	    	elbow_angle = 0;
 	    }
-	    ikin_info(Point new_foot_pos, double c, double s, double e) {
+	    ikin_info(Point new_foot_pos, float c, float s, float e) {
             foot_pos = new_foot_pos;
 	    	chest_angle = c;
 	    	shoulder_angle = s;
@@ -169,15 +171,18 @@ class DogLeg {
     Point trajectory_f;       // Path vector from the starting position to the goal position. Set to POINT_ZERO if not currently in trajectory. 
                             // GROUND frame if foot is FIXED. BODY frame if foot is FLOATING
     Point goal_foot_pos_of;    // Foot position at the end of the trajectory. GROUND frame if foot is FIXED. BODY frame if foot is FLOATING
-    double traj_start_time; // Starting time of the trajectory
-    double traj_total_time; // Total time of the trajectory, in ms
+    float traj_start_time; // Starting time of the trajectory
+    float traj_total_time; // Total time of the trajectory, in ms
 
 public:
     DogLeg() {}
 
 
     DogLeg(RServoDriver *ndriver, int p1, int p2, int p3, bool flip_lr, bool flip_fb, Rot *body_orientation_ref=NULL,
-           Point mounting_point=POINT_ZERO, double starting_height=L_DEFAULT_HEIGHT) {
+           Point mounting_point=POINT_ZERO, float starting_height=L_DEFAULT_HEIGHT) {
+    	// Set parameters
+    	L_CHEST = L_CHEST_DEFAULT;
+
         // Signal info
         servo_driver = ndriver; 
       
@@ -196,6 +201,7 @@ public:
         if (flip_lr) {
           servo_driver->reverseDirection(elbow_chan);
           servo_driver->reverseDirection(shoulder_chan);
+          L_CHEST *= -1;
         }
 
         // Save orientation
@@ -221,7 +227,7 @@ public:
     }
 
       // Additional offsets to servo angles
-    void calibrateServos(double off1, double off2, double off3) {
+    void calibrateServos(float off1, float off2, float off3) {
         servo_driver->setOffset(elbow_chan, ELBOW_OFFSET_MAIN + off3);
         servo_driver->setOffset(shoulder_chan, SHOULDER_OFFSET_MAIN + off2);
         servo_driver->setOffset(chest_chan, CHEST_OFFSET_MAIN + off1);
@@ -237,12 +243,12 @@ public:
         centroid_oBfG = centroid_ref;
     }
 
-    // void gotoAngles(double chest, double shoulder, double elbow) {
+    // void gotoAngles(float chest, float shoulder, float elbow) {
     // 	angles_candidate = servo_angles(chest, shoulder, elbow);
     // 	sendSignals();
     // }
 
-    Point getCurrentFootPositionFromShoulder(Frame frame) {
+    Point getCurrentFootPositionFromShoulder(Frame frame=Frame::BODY) {
         if (frame == Frame::GROUND) {
             return (cur_foot_pos) / (*body_orientation);
         } else { // frame == Frame::BODY
@@ -313,21 +319,21 @@ public:
 // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 private:
   	// Moves to the requested position RELATIVE TO MOUNTING POINT, IN BODY FRAME
-  	bool inverseKinematics(double x, double y, double z) {
+  	bool inverseKinematics2(float x, float y, float z) {
         // x_ and z_ are the x and z coordinates in the reference plane coincident with the arm plane
-        double x_ = x;
-        double z_ = sqrt(y*y + z*z);
+        float x_ = x;
+        float z_ = sqrt(y*y + z*z);
 
         // Converts values to state
-        double l_arm_eff = sqrt(x_*x_ + z_*z_);
-        double angle_shoulder_eff = atan2(x_, z_) RAD;
-        double angle_chest = -atan2(y, -z) RAD;
+        float l_arm_eff = sqrt(x_*x_ + z_*z_);
+        float angle_shoulder_eff = atan2(x_, z_) RAD;
+        float angle_chest = -atan2(y, -z) RAD;
 
   	    // Solve for shoulder, elbow angles
         // Angle from forearm to upper arm. 
-        double angle_elbow_relative;
+        float angle_elbow_relative;
         // Angle of shoulder
-        double angle_shoulder;
+        float angle_shoulder;
         
         if (L_FOREARM == L_UPPERARM) { // Optimization if arm lengths are the same
             angle_elbow_relative = 2*asin(l_arm_eff / (2 * L_FOREARM)) RAD;
@@ -339,7 +345,7 @@ private:
         }
 
         // Angle of elbow
-        double angle_elbow = 180 + angle_shoulder - angle_elbow_relative;
+        float angle_elbow = 180 + angle_shoulder - angle_elbow_relative;
         angle_elbow -= WISHBONE_ANGLE; // To get servo angle
 
         // Save candidate info
@@ -356,21 +362,24 @@ private:
         }
   	}
 
-        bool inverseKinematics2(double x, double y, double z) {
+        bool inverseKinematics(float x, float y, float z) {
         // x_ and z_ are the x and z coordinates in the reference plane coincident with the arm plane
-        double x_ = x;
-        double z_ = sqrt(y*y + z*z - L_CHEST*L_CHEST);
+        
+        // // Impossible position check
+        // if ((y*y + z*z - L_CHEST*L_CHEST) < 0) 	return false;
+        float x_ = x;
+        float z_ = sqrt(y*y + z*z - L_CHEST*L_CHEST);
 
         // Converts values to state
-        double l_arm_eff = sqrt(x_*x_ + z_*z_);
-        double angle_shoulder_eff = atan2(x_, z_) RAD;
-        double angle_chest = atan2(-y, -z) RAD + atan2(L_CHEST, z_) - 90;
+        float l_arm_eff = sqrt(x_*x_ + z_*z_);
+        float angle_shoulder_eff = atan2(x_, z_) RAD;
+        float angle_chest = 90 - (atan2(z_, L_CHEST) RAD - atan2(-y, -z) RAD);
 
-        // Solve for shoulder, elbow angles
+  	    // Solve for shoulder, elbow angles
         // Angle from forearm to upper arm. 
-        double angle_elbow_relative;
+        float angle_elbow_relative;
         // Angle of shoulder
-        double angle_shoulder;
+        float angle_shoulder;
         
         if (L_FOREARM == L_UPPERARM) { // Optimization if arm lengths are the same
             angle_elbow_relative = 2*asin(l_arm_eff / (2 * L_FOREARM)) RAD;
@@ -382,21 +391,24 @@ private:
         }
 
         // Angle of elbow
-        double angle_elbow = 180 + angle_shoulder - angle_elbow_relative;
+        float angle_elbow = 180 + angle_shoulder - angle_elbow_relative;
         angle_elbow -= WISHBONE_ANGLE; // To get servo angle
 
         // Save candidate info
-        if (WITHIN(angle_chest, -75, 75) && 
-            WITHIN(angle_elbow, -185, -67) && 
-            WITHIN(angle_shoulder - angle_elbow, 20, 160)) {
-
+        bool ikin_err = false;
+        if (!WITHIN(angle_chest, -75, 75)) 	{Serial.print("IKIN ERR: Chest at "); Serial.println(angle_chest); ikin_err = true;}
+        if (!WITHIN(angle_elbow, -185, -67)) 	{Serial.print("IKIN ERR: Elbow at "); Serial.println(angle_elbow); ikin_err = true;}
+        if (!WITHIN(angle_shoulder - angle_elbow, 20, 160)) {Serial.print("IKIN ERR: Shoulder - Elbow at "); Serial.println(angle_shoulder - angle_elbow); ikin_err = true;}
+        if (ikin_err) {
+        	Serial.print("Requested Point: "); Point(x, y, z).print();
+        	return false;
+        } else {
             foot_candidate_info.chest_angle = angle_chest;
             foot_candidate_info.shoulder_angle = angle_shoulder;
             foot_candidate_info.elbow_angle = angle_elbow;
             return true;
-        } else {
-            return false;
         }
+        
     }
 
     // Moves foot to a point in the BODY frame relative to the SHOULDER position.
@@ -416,7 +428,7 @@ public:
     // @param frame:              Reference frame in which new_foot_pos is given.
     // @param time:               Total movement time desired to move the foot from its current position to the new position.
     //                            Set to 0/TIME_INSTANT for max speed.
-    void setToPositionFromShoulder(Point new_foot_pos_f, Frame frame=Frame::BODY,  double time=TIME_INSTANT) {
+    void setToPositionFromShoulder(Point new_foot_pos_f, Frame frame=Frame::BODY,  float time=TIME_INSTANT) {
         // TODO: account for fixed goal being from centroid
         // Set up trajectory info based on leg state
         if ((frame == Frame::GROUND)) {
@@ -450,7 +462,7 @@ public:
     // @param frame:              Reference frame in which new_foot_pos is given.
     // @param time:               Total movement time desired to move the foot from its current position to the new position.
     //                            Set to 0/TIME_INSTANT for max speed.
-    void setToPositionFromBody(Point new_foot_pos_oBf, Frame frame=Frame::BODY, double time=TIME_INSTANT) {
+    void setToPositionFromBody(Point new_foot_pos_oBf, Frame frame=Frame::BODY, float time=TIME_INSTANT) {
         Point new_foot_pos_f;
         if ((frame == Frame::GROUND)) {
             if (!body_orientation) return; // Ensures ground frame is locatable
@@ -463,7 +475,7 @@ public:
     }
 
     // Need to make sure only fixed leg can access?
-    void setToPositionFromCentroid(Point new_foot_pos_oCf, Frame frame=Frame::BODY, double time=TIME_INSTANT) {
+    void setToPositionFromCentroid(Point new_foot_pos_oCf, Frame frame=Frame::BODY, float time=TIME_INSTANT) {
         Point new_foot_pos_oBf;
         if ((frame == Frame::GROUND)) {
             if (!body_orientation) return; // Ensures ground frame is locatable
@@ -480,7 +492,7 @@ public:
 
     // Moves the foot by the amount relative to its original position
     // Implementation: Sets up information to pass to setToPositionFromShoulder
-    void setFromPosition(Point d_foot_pos, Frame frame=Frame::BODY, double time=TIME_INSTANT) {
+    void setFromPosition(Point d_foot_pos, Frame frame=Frame::BODY, float time=TIME_INSTANT) {
         Point new_foot_pos;
         if ((frame == Frame::GROUND)) {
             if (!body_orientation) return; // Ensures ground frame is locatable
@@ -523,7 +535,7 @@ public:
                 trajectory_f = total_trajectory_fG.unit() * trajectory_f.norm(); 
 
                 // Fraction of trajectory travelled. 0 to 1. 1 means complete
-                double expected_progress; 
+                float expected_progress; 
                 if (traj_total_time == TIME_INSTANT) { // Trajectory is instantaneous
                     expected_progress = 1;
                 } else {
@@ -553,7 +565,7 @@ public:
             // Check if currently in a trajectory
             if (trajectory_f) {
                 // Percentage of trajectory travelled
-                double expected_progress; 
+                float expected_progress; 
                 if (traj_total_time == TIME_INSTANT) { // Trajectory is instantaneous
                     expected_progress = 1;
                 } else {
@@ -593,6 +605,15 @@ public:
 
     bool isIdle() {
         return !trajectory_f;
+    }
+
+
+    // Debugging
+    void printIkinAngles() {
+    	Serial.print("IKIN Angles: C: "); Serial.print(foot_candidate_info.chest_angle);
+    	Serial.print("S: "); Serial.print(foot_candidate_info.shoulder_angle);
+    	Serial.print("E: "); Serial.print(foot_candidate_info.elbow_angle);
+    	Serial.println();
     }
 };
 
@@ -639,7 +660,7 @@ public:
     // // @param time:               Total movement time desired to move the foot from its current position to the new position.
     // //                            Set to 0/TIME_INSTANT for max speed.
     // // deprecated @param speed:              speed (mm/s) of movement. Set to 0 for "instantaneous" movement/max speed
-    // bool gotoPositionFromShoulder(Point new_foot_pos, Frame frame, Rot body_orientation=ROT_ZERO,  double time=TIME_INSTANT) {
+    // bool gotoPositionFromShoulder(Point new_foot_pos, Frame frame, Rot body_orientation=ROT_ZERO,  float time=TIME_INSTANT) {
     //     // Calculate goal position based on frame
     //     if (frame == BODY)
     //         goal_foot_pos_of = new_foot_pos;

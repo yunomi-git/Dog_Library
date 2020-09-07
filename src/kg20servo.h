@@ -15,7 +15,7 @@
 class kg20servo : public RServo{
 
 public:
-	kg20servo(double nspeed = 1) : RServo(min_ang, max_ang, min_sig, max_sig, nspeed) {
+	kg20servo(float nspeed = 1) : RServo(min_ang, max_ang, min_sig, max_sig, nspeed) {
 	}
 };
 
