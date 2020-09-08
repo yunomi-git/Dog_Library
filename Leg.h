@@ -8,16 +8,22 @@
 #include <Point.h>
 #include <Rot.h>
 
-    #define PRINT_POINT(a, b) Serial.print(a); b.print();
+   
 
  // #define DEBUG
+
+
+// TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// - If motion is requested and trajectory already exists, add to old trajectory.
+// - Incorporate default mounting pos into startup
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 // Dog leg on a body
 
 // USAGE DETAILS
 // Calculates inverse kinematics to move foot to a desired position.
 // Desired foot position must be:
-//  - Relative to the body origin
+//  - Relative to the body origin or shoulder origin
 //  - In body frame
 //
 // COORDINATE FRAME
@@ -34,24 +40,8 @@
 //   . --> +x (front)
 //   +y (right)
 //
-// - Mounting Position: Distance to shoulder from body center
-//
-// COORDINATION STATE
-// - Leg may be set to various coordination states:
-//   Fixed: Foot trajectory is constant in ground frame regardless of body orientation
-//   Floating: Foot trajectory is constant in body frame
-//   Anchored: Foot position is constant in ground frame, and foot is in contact with the ground/a surface
-// - For consistency with coordination states, requesting a movement in a given frame...creates
-//   a trajectory dependent on the coordination state
-//
-// ORIENTATION
-// - The body orientation refers to the CURRENT orientation, not the desired one.
-//   It is primarily used for - accessing the current foot position
-//                            - locating the ground frame
-//   Obtaining a desired orientation is the responsibility of the dog class.
+// - Mounting Position: Distance to shoulder from body center, BODY frame
 
-// TODO:
-// - If motion is requested and trajectory already exists, add to old trajectory.
 
 /**
 * IMPLEMENTATION DETAILS
@@ -63,22 +53,12 @@
 * 
 * - Trajectory: Allows speed specification.
 *   Fixed speed in trajectory. Not polynomial, because already using a servo
-* 
-* - Convert ground to body frame: p_B = p_G * orientation
-* - Convert body to ground frame: p_G = p_B / (orientation)
-* 
-* - To reduce computational requirements, foot positions (listed) are stored differenely based on 
-*   the coordination state.
-*      Trajectory
-*      Goal foot position
 *
 * - Inverse Kinematics ALWAYS performed in BODY frame, relative to SHOULDER
 */
 
 
-enum class Frame {GROUND, BODY};
 enum class OriginReference{BODY, SHOULDER};
-enum class CoordinationState {ANCHORED, FLOATING};
 
 #define TIME_INSTANT 0
 
@@ -187,7 +167,7 @@ class DogLeg {
     Point mounting_pos; // Mounting point relative to body origin IN BODY FRAME
     Point current_foot_position; // Position relative to the shoulder origin. BODY frame 
 
-    CoordinationState coord_state;  // anchored, floating
+    FootState coord_state;  // anchored, floating
                                     // Allows dog to keep track of foot interactions
                                     /* Floating: Not touching the floor
                                      * Anchored: Touching the floor
@@ -227,7 +207,7 @@ public:
         centroid_oBfG = NULL;
 
         // Default Startup
-        coord_state = CoordinationState::ANCHORED;
+        coord_state = FootState::ANCHORED;
 
         mounting_pos = mounting_point;
         foot_pos_default = Point(0, 0, -starting_height);
@@ -262,20 +242,16 @@ public:
     // 	sendSignals();
     // }
 
-    Point getCurrentFootPositionFromShoulder(Frame frame=Frame::BODY) {
-        if (frame == Frame::GROUND) {
-            return (current_foot_position) / (*body_orientation);
-        } else { // frame == Frame::BODY
-            return current_foot_position;
-        } 
+    Point getCurrentFootPositionFromShoulder() {
+        return current_foot_position;
     }
 
-    Point getCurrentFootPositionFromBody(Frame frame) {
-        if (frame == Frame::GROUND) {
-            return (current_foot_position + mounting_pos) / (*body_orientation);
-        } else { // frame == Frame::BODY
-            return current_foot_position + mounting_pos;
-        } 
+    Point getCurrentFootPositionFromBody() {
+        return current_foot_position + mounting_pos;
+    }
+
+    Point getMountingPoint() {
+    	return mounting_pos;
     }
 
 // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -283,34 +259,17 @@ public:
 // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 public:
     bool isAnchored() {
-        return (coord_state == CoordinationState::ANCHORED);
+        return (coord_state == FootState::ANCHORED);
     }
 
     bool isFloating() {
-        return coord_state == CoordinationState::FLOATING;
+        return coord_state == FootState::FLOATING;
     }
 
     // Swaps state. Also makes sure points are stored in the correct frame.
     // Implementation: Frame switches are not necessary in most contexts. It is mostly only useful if
     //                 switching states in the middle of a trajectory.
-    void setState(CoordinationState new_state) {
-        // Switch from floating or anchored -> fixed
-        if (coord_state != CoordinationState::FIXED && new_state == CoordinationState::FIXED) {
-            if (!centroid_oBfG) return; // Fixed frame only possible if centroid is known/available 
-            // Points originally in BODY frame. Change to GROUND frame
-            // PRINT_POINT("goal orig: ", goal_foot_pos_of)
-            trajectory_f      = POINT_ZERO;
-            goal_foot_pos_of   = (goal_foot_pos_of + mounting_pos)/(*body_orientation) - (*centroid_oBfG);
-            // PRINT_POINT("centroid: ", (*centroid_oBfG))
-            // PRINT_POINT("goal new: ", goal_foot_pos_of)
-        }
-        // Switch from fixed -> floating or anchored
-        else if (coord_state == CoordinationState::FIXED && new_state != CoordinationState::FIXED) {
-            // Points originally in GROUND frame. Change to BODY frame
-            trajectory_f      = POINT_ZERO;
-            goal_foot_pos_of   = (goal_foot_pos_of + (*centroid_oBfG)) * (*body_orientation);
-        }
-        
+    void setState(FootState new_state) {        
         coord_state = new_state;
     }
 

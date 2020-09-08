@@ -5,6 +5,8 @@
 #include "math.h"
 #include "Rot.h"
 
+#define PRINT_POINT(a, b) Serial.print(a); b.print();
+
 #define POINT_ZERO Point(0,0,0)
 
 // A point in 3d cartesian space
