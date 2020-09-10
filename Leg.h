@@ -16,6 +16,7 @@
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // - If motion is requested and trajectory already exists, add to old trajectory.
 // - Incorporate default mounting pos into startup
+// - Put ikin info into trajectory instead of existing separately? -> reset will scrub everything
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 // Dog leg on a body
@@ -87,6 +88,7 @@ class DogLeg {
     // ==================================================
 
     // ============== SIGNALS ===========================
+    // PWM driver signal channels
 	int elbow_chan; // lower joint
 	int shoulder_chan; // upper joint. reversed to elbow
 	int chest_chan; // "roll"
@@ -120,7 +122,7 @@ class DogLeg {
 	    }
     };
 
-    IkinInfo foot_candidate_info; // IKIN info for leg to check against other legs. shoulder origin, body frame
+    IkinInfo foot_candidate_info; // IKIN info for a working leg position. transient. shoulder origin, body frame
 
     // ============= Trajectory =========================
     struct TrajectoryInfo {
@@ -165,13 +167,9 @@ class DogLeg {
     // ============= Accessed ===========================
     // ==================================================
     Point mounting_pos; // Mounting point relative to body origin IN BODY FRAME
+    // $$ Manually Set
     Point current_foot_position; // Position relative to the shoulder origin. BODY frame 
 
-    FootState coord_state;  // anchored, floating
-                                    // Allows dog to keep track of foot interactions
-                                    /* Floating: Not touching the floor
-                                     * Anchored: Touching the floor
-                                     */
 public:
     DogLeg() {}
 
@@ -202,26 +200,15 @@ public:
           L_CHEST *= -1;
         }
 
-        // Save orientation
-        body_orientation = body_orientation_ref;
-        centroid_oBfG = NULL;
-
-        // Default Startup
-        coord_state = FootState::ANCHORED;
-
         mounting_pos = mounting_point;
         foot_pos_default = Point(0, 0, -starting_height);
         // setToPositionFromShoulder(foot_pos_default, Frame::BODY, 1000);
         foot_candidate_info.foot_pos = foot_pos_default;
         inverseKinematics(foot_pos_default);
 
-        // cur_speed = DEFAULT_SPEED;
         current_foot_position = foot_pos_default;
 
-        trajectory_f = POINT_ZERO;
-        goal_foot_pos_of = foot_pos_default;
-        traj_start_time = 0; 
-        traj_total_time = 0; 
+        trajectory = TrajectoryInfo();
     }
 
       // Additional offsets to servo angles
@@ -252,25 +239,6 @@ public:
 
     Point getMountingPoint() {
     	return mounting_pos;
-    }
-
-// ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// ======== COORDINATION STATE ============~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-public:
-    bool isAnchored() {
-        return (coord_state == FootState::ANCHORED);
-    }
-
-    bool isFloating() {
-        return coord_state == FootState::FLOATING;
-    }
-
-    // Swaps state. Also makes sure points are stored in the correct frame.
-    // Implementation: Frame switches are not necessary in most contexts. It is mostly only useful if
-    //                 switching states in the middle of a trajectory.
-    void setState(FootState new_state) {        
-        coord_state = new_state;
     }
 
 // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -311,8 +279,8 @@ private:
 
         // Save candidate info
         bool ikin_err = false;
-        if (!WITHIN(angle_chest, -75, 75)) 	{Serial.print("IKIN ERR: Chest at "); Serial.println(angle_chest); ikin_err = true;}
-        if (!WITHIN(angle_elbow, -185, -67)) 	{Serial.print("IKIN ERR: Elbow at "); Serial.println(angle_elbow); ikin_err = true;}
+        if (!WITHIN(angle_chest, -75, 75)) 					{Serial.print("IKIN ERR: Chest at "); Serial.println(angle_chest); ikin_err = true;}
+        if (!WITHIN(angle_elbow, -185, -67)) 				{Serial.print("IKIN ERR: Elbow at "); Serial.println(angle_elbow); ikin_err = true;}
         if (!WITHIN(angle_shoulder - angle_elbow, 20, 160)) {Serial.print("IKIN ERR: Shoulder - Elbow at "); Serial.println(angle_shoulder - angle_elbow); ikin_err = true;}
         if (ikin_err) {
         	Serial.print("Requested Point: "); Point(x, y, z).print();
@@ -365,8 +333,8 @@ public:
     // Moves the foot by the specified amount relative to its original position
     // given in BODY frame
     // Implementation: Sets up information to pass to setToPositionFromShoulder
-    void setFromPosition(Point d_foot_pos, Frame frame=Frame::BODY, float time=TIME_INSTANT) {
-      	setToPositionFromShoulder(current_foot_position + d_foot_pos, frame, time);
+    void setFromPosition(Point d_foot_pos, float time=TIME_INSTANT) {
+      	setToPositionFromShoulder(current_foot_position + d_foot_pos, time);
     }
 
     // Calculates where the foot position should be based on a trajectory
@@ -374,7 +342,7 @@ public:
     // If no trajectory, does nothing
     // Implementation: Given trajectory, calculates candidate foot information based on time
     // @return Whether IKIN failed or not
-    bool operate() {
+    bool solveKinematics() {
          // Check if currently in a trajectory
         if (trajectory.isActive()) {
         	Point next_foot_position;
@@ -389,20 +357,32 @@ public:
         		trajectory.end();
         	}
 
-            // and passes to IKIN
+            // Saves the candidate position
             foot_candidate_info.foot_pos = next_foot_position;
+            // and passes to IKIN to solve
             return inverseKinematics(foot_candidate_info.foot_pos);
         }
         return true;
     }
 
-    // Sends saved angles to servos. usually place right after operate().
+    // Sends saved angles to servos. Only use if solveKinematics returns true. 
+    // Updates appropriate variables
     void sendSignals() {
         current_foot_position = foot_candidate_info.foot_pos;
+
         servo_driver->gotoAngle(chest_chan, foot_candidate_info.chest_angle);
         servo_driver->gotoAngle(shoulder_chan, foot_candidate_info.shoulder_angle);
         servo_driver->gotoAngle(elbow_chan, foot_candidate_info.elbow_angle);
         foot_candidate_info.reset();
+    }
+
+    // Place this in loop if leg is operating independently
+    void operate() {
+    	if (solveKinematics()) 
+	    	sendSignals();
+	    else
+	    	foot_candidate_info.reset();
+	    	trajectory.end();
     }
 
     // Cancels a trajectory if dog legs not in sync

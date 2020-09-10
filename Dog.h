@@ -15,6 +15,7 @@
 
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // - Make sure everything is oBfG
+// - Should Centroid z be lowest leg or just average?
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 // USAGE DETAILS
@@ -30,18 +31,32 @@
 //   a trajectory dependent on the coordination state
 //
 // ORIENTATION // rewrite this
-// - The body orientation refers to the CURRENT orientation, not the desired one.
-//   It is primarily used for - accessing the current foot position
-//                            - locating the ground frame
-//   Obtaining a desired orientation is the responsibility of the dog class.
+// - All Leg commands are sent in body frame. Dog class responsible for correct frame conversion.
+//
+/* ============ FRAMES ==========================
+ * GROUND - Static, unchanging reference frame of the world.
+ * BODY   - Frame attached to the body.
+ * FLOOR  - Governed by foot placement wrt ground frame (ex. walking up a slope) 
+ * All frames currently have body origin (9/9/20)
+ *
+ * Measurements:
+ * - BODY wrt GROUND  : measured by IMU. "imu" orientation
+ * - BODY wrt FLOOR   : "set" orientation, kinematically driven 
+ * - FLOOR wrt GROUND : 1. (imu - set) orientation = floor orientation <- using this: easiest to implement (see notes locomotion/centroid(1))
+ *                      2. best fit through feet points in ground plane 
+ * note: by default all orientations measured wrt ground.
+ */
 
 /**
 * IMPLEMENTATION DETAILS
 * - All points are in GROUND FRAME and RELATIVE TO BODY ORIGIN unless otherwise noted
+* - o_f_: origin {body, centroid, shoulder}, frame {body, ground, floor}
 * 
-* - Convert ground to body frame: p_B = p_G * orientation
-* - Convert body to ground frame: p_G = p_B / (orientation)
+* - Convert ground to body frame: p_B = p_G * imu_orientation
+* - Convert body to ground frame: p_G = p_B / (imu_orientation)
 *
+* - Convert A to B: p_B = p_A * B_A_orientation
+* - Convert B to A: p_A = p_B / B_A_orientation
 */
 
 
@@ -49,6 +64,7 @@
 enum class Frame {GROUND, BODY};
 
 class RobotDog {
+private:
     // ======================= CALIBRATION ===============================================
     #define LEG_UR_C_ANG_OFS  (0)
     #define LEG_UR_S_ANG_OFS  (-3)
@@ -111,12 +127,15 @@ class RobotDog {
     IMU bno_imu;
 
     // Pose/State
-    Point centroid_oBfG;        // Centroid location in GROUND frame relative to BODY origin
-    Rot body_orientation;       // Actual orientation of the body, relative to stagnant ground frame
-    Rot desired_orientation;    // Desired orientation of the body
+    // Measured
+    Rot body_orientation;   // Actual orientation of the body, relative to stagnant ground frame
+    // $ Manually Set
+    Rot set_orientation;    // Desired orientation of the body, relative to floor frame. Kinematically set
+    // From calibration data
     Point COM; // COM relative to default body origin
 
     // ============= COORDINATION =====================
+    // Foot Stance, Foot Note, Anchor Point, Centroid
     enum class FootStance {PLANTED, SET, LIFTED};
 
     // Information about a foot to help coordinate body movements
@@ -163,13 +182,50 @@ class RobotDog {
             return anchor_point;
         }
 
-        FootStance getStance() {
-            return stance;
+        bool isStance(FootStance stance2) {
+            return stance == stance2;
         }
+
+        bool isAnchored() {
+            return !isStance(FootStance::FLOATING);
+        }
+    };
+
+    FootNote[NUM_LEGS] foot_note; // Coordination information about leg[i] is stored in foot_note[i]
+
+    /* Calculates the centroid in the GROUND frame, from BODY.
+     * The centroid is the average of all PLANTED legs. The z height *currently* is aligned 
+     * to the lowest leg.
+     * Centroid must be calculated live each time it is used - most robust to changes
+     * in anchor points.
+     */
+    Point getCentroid() {
+        // 1. avera
+        int num_planted = 0;
+        Point centroid = POINT_ZERO;
+        for (int i = 0; i < NUM_LEGS; i++) {
+            if (foot_note[i].getStance == FootStance::PLANTED) {
+                Point leg_pos_oBfG = foot_note[i].getAnchorPoint();
+                centroid += leg_pos_oBfG; // get x, y of centroid
+                num_PLANTED++;                
+            }
+        }
+        
+        if (num_PLANTED == 0) {
+            doError(2);
+            return POINT_ZERO;
+        } 
+
+        centroid /= num_PLANTED;
+        
+        return centroid;
     }
 
-    FootNote[NUM_LEGS] foot_note;
-
+    struct TrajectoryInfo {
+        int a;
+        int b;
+        int c;
+    };
 
 public:
     RobotDog() {
@@ -223,10 +279,10 @@ public:
 
     // "heights" are relative to body origin
     void gotoLegHeights(float h1, float h2, float h3, float h4) {
-        leg[0]->setToPositionFromShoulder(Point(0, 0, h1), Frame::BODY);
-        leg[1]->setToPositionFromShoulder(Point(0, 0, h2), Frame::BODY);
-        leg[2]->setToPositionFromShoulder(Point(0, 0, h3), Frame::BODY);
-        leg[3]->setToPositionFromShoulder(Point(0, 0, h4), Frame::BODY);
+        leg[0]->setToPositionFromShoulder(Point(0, 0, h1));
+        leg[1]->setToPositionFromShoulder(Point(0, 0, h2));
+        leg[2]->setToPositionFromShoulder(Point(0, 0, h3));
+        leg[3]->setToPositionFromShoulder(Point(0, 0, h4));
         operateAllLegs();
         sendAllSignals();          
     }
@@ -300,36 +356,6 @@ public:
         // Serial.println();
     }
 
-    // Calculates the centroid in the GROUND frame, from BODY
-    // Only use as needed - the centroid does not change frequently
-    Point calculateCentroid() {
-        int num_PLANTED = 0;
-        float lowest_leg_height = 0;
-        Point centroid = POINT_ZERO;
-        for (int i = 0; i < NUM_LEGS; i++) {
-            if (foot_note[i].getStance == FootStance::PLANTED) {
-                Point leg_pos_oBfG = foot_note[i].getAnchorPoint();
-                centroid += leg_pos_oBfG; // get x, y of centroid
-
-                if (leg_pos_oBfG.z < lowest_leg_height)
-                    lowest_leg_height = leg_pos_oBfG.z;
-
-                num_PLANTED++;                
-            }
-        }
-        
-        if (num_PLANTED == 0) {
-            doError(2);
-            return POINT_ZERO;
-        } 
-
-        centroid /= num_PLANTED;
-        centroid.z = lowest_leg_height; // Calculate actual centroid
-        
-        return centroid;
-    }
-
-
     // Move to original positions and anchors
     void gotoDefaultStance() {
         for (int i = 0; i < NUM_LEGS; i++) {
@@ -347,28 +373,40 @@ public:
     }
 
     void operate() {
-        // Update the IMU and centroid
-        if (imu_update_timer.timeOut()) {
-            bno_imu.operate();
-            imu_update_timer.reset();
+        // Update the IMU
+        bno_imu.operate();
+        body_orientation = bno_imu.getOrientation();
 
-            body_orientation = bno_imu.getOrientation();
-        }
+        // Updates each leg appropriately based on stance:
+        // Anchored legs must move together.
+        // Lifted legs may do whatever
 
-        // Update the legs
-        bool leg_success = true;
-        if (leg_update_timer.timeOut()) {
-            // Updates each leg
-            for (int i = 0; i < NUM_LEGS; i++) {
-                if(!(leg[i]->operate())) {
-                    leg_success = false;
-                    //doError(1);
+        // First checks if anchored legs motion are possible
+        bool anchored_leg_motion_feasible = true;
+        for (int i = 0; i < NUM_LEGS; i++) {
+            if (foot_note[i].isAnchoredStance()) {
+                if(!(leg[i]->solveKinematics())) {
+                    anchored_leg_motion_feasible = false;
+                    // TODO also need to cancel overall body trajectory.
                     break;
                 }
+        }
+
+        // Sends signals appropriately
+        for (int i = 0; i < NUM_LEGS; i++) {
+            if (foot_note[i].isAnchoredStance()) {
+                if (anchored_leg_motion_feasible) {
+                    leg[i]->sendSignals();
+                } else {
+                    leg[i]->cancelTrajectory();
+                }
+            } else { // foot is lifted
+                if(leg[i]->solveKinematics()) {
+                    leg[i]->sendSignals();
+                } else {
+                    leg[i]->cancelTrajectory();
+                }
             }
-            // Sends signals
-            if (leg_success) { sendAllSignals(); }
-            leg_update_timer.reset();
         }
     }
 
