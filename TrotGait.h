@@ -245,63 +245,6 @@ private:
     }
 
 
-
-// ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// ======== DEBUGGINH =====================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~    
-    // Forces a new orientation to be set...mostly for debugging
-    void setOrientation(Rot new_orientation) {
-        body_orientation = new_orientation;
-    }
-
-    void doError(int e) {
-        #ifdef DEBUG
-        Serial.print("Dog ERROR: ");
-        switch (e) {
-            case 1: Serial.println("Leg IKIN invalid."); break;
-            case 2: Serial.println("No PLANTED Points."); break;
-            case 3: Serial.println("Some FootNote Error"); break;
-        } 
-        #endif
-    }
-
-    void printIMU() {
-        Serial.print("IMU: "); (bno_imu.getOrientation()).print();
-    }
-
-    void printLegs() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            Point foot_pos_G = leg[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
-            Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
-        }
-    }
-
-    void printLegsFromBody() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            Point foot_pos_G = leg[i]->getCurrentFootPositionFromBody(Frame::GROUND);
-            Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
-        }
-    }
-
-    void printLeg(int i) {
-        Point foot_pos_G = leg[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
-        Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
-    }
-
-    void printCentroid() {
-        Serial.print("Centoid (oBfG): "); centroid_oBfG.print();
-    }
-
-    DogLeg *getLeg(int i) {
-        return leg[i];
-    }
-
-    RServoDriver *getServoDriver() {
-        return &servo_driver;
-    }
-};
-
-
 #endif
 
 // Non-Trajectory Walking

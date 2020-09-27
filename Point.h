@@ -8,6 +8,7 @@
 #define PRINT_POINT(a, b) Serial.print(a); b.print();
 
 #define POINT_ZERO Point(0,0,0)
+#define POINT_NULL Point(-9999.9, -999.9, -999.9)
 
 // A point in 3d cartesian space
 
@@ -142,7 +143,7 @@ public:
      				 							   z);
     }
 
-    // Rotates the point about origin by given angles in degrees in order of:
+    // Rotates the point about origin by given angles CCW in degrees in order of:
     // in GROUND/ABSOLUTE frame, 		x axis -> y axis -> z axis or,
     // in BODY/MOVING frame, 			z axis -> y axis -> x axis.
     // Note that x=roll, y=pitch, z=yaw and CCW is +.
