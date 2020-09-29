@@ -16,6 +16,7 @@
 
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // - Trajectory adjustment procedure
+// - FIX KINEMATICS - old frame follows LHR. Change to RHR and verify math.
 // - ** verify frame conversions **...is rotate(ground->floor).rotate(floor->body) equiv to rotate(ground->floor + floor->body)?
 //              - it is not. set_orient uses floor frame basis
 //              -            meas_orient uses ground frame basis
