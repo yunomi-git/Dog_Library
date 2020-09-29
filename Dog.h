@@ -60,11 +60,11 @@
 * - All points are in GROUND FRAME and RELATIVE TO BODY ORIGIN unless otherwise noted
 * - o_f_: origin {body, centroid, shoulder}, frame {body, ground, floor}
 * 
-* - Convert ground to body frame: p_B = p_G * imu_orientation
-* - Convert body to ground frame: p_G = p_B / (imu_orientation)
+* - Convert ground to body frame: p_B = p_G / imu_orientation
+* - Convert body to ground frame: p_G = p_B * (imu_orientation)
 *
-* - Convert frame A to B: p_B = p_A * A2B_orientation
-* - Convert frame B to A: p_A = p_B / A2B_orientation
+* - Convert frame A to B: p_B = p_A / A2B_orientation
+* - Convert frame B to A: p_A = p_B * A2B_orientation
 *
 * Frame conventions:
 * - Anchor points: Floor frame centroid origin. // anchor point (fFoC) + centroid (fFoB) = leg position (fFoB)
@@ -263,29 +263,29 @@ public:
         // COM = Point(3, 0, 9.5);
         COM = Point(0,0,0);
 
-        leg_ur = DogLeg(&servo_driver,  0,  1,  2, Point( LENGTH2,  WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
+        leg_ur = DogLeg(&servo_driver,  0,  1,  2, Point( LENGTH2, -WIDTH2, 0), DEFAULT_LEG_HEIGHT);
+        leg_ur.flipLR();
         leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
         leg_ur.calibrateServos(LEG_UR_C_ANG_OFS, LEG_UR_S_ANG_OFS, LEG_UR_E_ANG_OFS);
 
-        leg_br = DogLeg(&servo_driver,  4,  5,  6, Point(-LENGTH2,  WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
+        leg_br = DogLeg(&servo_driver,  4,  5,  6, Point(-LENGTH2, -WIDTH2, 0), DEFAULT_LEG_HEIGHT);
+        leg_br.flipLR();
         leg_br.flipFB();
         leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
         leg_br.calibrateServos(LEG_BR_C_ANG_OFS, LEG_BR_S_ANG_OFS, LEG_BR_E_ANG_OFS);
 
-        leg_bl = DogLeg(&servo_driver,  8,  9, 10, Point(-LENGTH2, -WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
-        leg_bl.flipLR();
+        leg_bl = DogLeg(&servo_driver,  8,  9, 10, Point(-LENGTH2, WIDTH2, 0), DEFAULT_LEG_HEIGHT);
         leg_bl.flipFB();
         leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
         leg_bl.calibrateServos(LEG_BL_C_ANG_OFS, LEG_BL_S_ANG_OFS, LEG_BL_E_ANG_OFS);
 
-        leg_ul = DogLeg(&servo_driver, 12, 13, 14, Point( LENGTH2, -WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
-        leg_ul.flipLR();
+        leg_ul = DogLeg(&servo_driver, 12, 13, 14, Point( LENGTH2, WIDTH2, 0), DEFAULT_LEG_HEIGHT);
         leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
         leg_ul.calibrateServos(LEG_UL_C_ANG_OFS, LEG_UL_S_ANG_OFS, LEG_UL_E_ANG_OFS);
 
         // Coordination Setup
         for (int i = 0; i < NUM_LEGS; i++) {
-            foot_note[i] = FootNote(foot[i].getMountingPoint() + Point(0, 0, -DEFAULT_LEG_HEIGHT));
+            foot_note[i] = FootNote(foot[i].getMountingPoint());
         }
 
         // Other setup
@@ -309,20 +309,20 @@ public:
 // ================
 // ==== HELPER =====
 // =================
-    Point convertFrame(Point p1, Frame frame1, Frame frame2) {
+    Point convertFrame(Point p, Frame frame_from, Frame frame_to) {
         // Convert appropriately
-        if ((frame1 == GROUND) && (frame2 == BODY)) {
-            return p1 * meas_body_orientation_fG2B;
-        } else if ((frame1 == BODY) && (frame2 == GROUND)) {
-            return p1 / meas_body_orientation_fG2B;
-        } else if ((frame1 == FLOOR) && (frame2 == BODY)) {
-            return p1 * set_body_orientation_fF2B;
-        } else if ((frame1 == BODY) && (frame2 == FLOOR)) {
-            return p1 / set_body_orientation_fF2B;
-        } else if ((frame1 == GROUND) && (frame2 == FLOOR)) {
-            return (p1 * (set_body_orientation_fF2B) / meas_body_orientation_fG2B);
-        } else { // ((frame1 == FLOOR) && (frame2 == GROUND)) {
-            return (p1 / (set_body_orientation_fF2B)) * meas_body_orientation_fG2B;
+        if ((frame_from == GROUND) && (frame_to == BODY)) {
+            return p / meas_body_orientation_fG2B;
+        } else if ((frame_from == BODY) && (frame_to == GROUND)) {
+            return p * meas_body_orientation_fG2B;
+        } else if ((frame_from == FLOOR) && (frame_to == BODY)) {
+            return p / set_body_orientation_fF2B;
+        } else if ((frame_from == BODY) && (frame_to == FLOOR)) {
+            return p * set_body_orientation_fF2B;
+        } else if ((frame_from == GROUND) && (frame_to == FLOOR)) {
+            return (p / (meas_body_orientation_fG2B) * set_body_orientation_fF2B);
+        } else { // ((frame_from == FLOOR) && (frame_to == GROUND)) {
+            return (p / (set_body_orientation_fF2B)) * meas_body_orientation_fG2B;
         } 
     }
 

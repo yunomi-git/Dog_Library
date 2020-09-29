@@ -31,17 +31,17 @@
 //
 // COORDINATE FRAME
 // Reference Leg (top view):
-//  -------
-//  |  o  |  front
 //  ------*
+//  |  o  |  front
+//  -------
 //   right    
 // o: body origin. *: shoulder origin
 //
 // Reference frame of COM (side view):
 //   ^ +z (up)
 //   |
-//   . --> +x (front)
-//   +y (right)
+//   x --> +x (front)
+//   +y (left)
 //
 // - Mounting Position: Distance to shoulder from body center, BODY frame
 
