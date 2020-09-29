@@ -152,7 +152,7 @@ public:
         imu::Vector<3> euler = q.toEuler();
         euler.toDegrees();
 
-        return Rot(euler.z(), -euler.y(), euler.x()) - orientation_offsets; // Technically not correct? Rotation matrices may not concatenate as subtraction...but accurate enough
+        return Rot(euler.z(), euler.y(), euler.x()) - orientation_offsets; // Technically not correct? Rotation matrices may not concatenate as subtraction...but accurate enough
     }
 
     Point getRawLinearAcceleration() {
