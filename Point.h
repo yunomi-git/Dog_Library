@@ -8,7 +8,7 @@
 #define PRINT_POINT(a, b) Serial.print(a); b.print();
 
 #define POINT_ZERO Point(0,0,0)
-#define POINT_NULL Point(-9999.9, -999.9, -999.9)
+#define POINT_NULL Point(-999.9, -999.9, -999.9)
 
 // A point in 3d cartesian space
 
@@ -116,7 +116,7 @@ public:
 // Helper Functions
     // Conversion to boolean
     explicit operator bool() const {
-        return !((x==0) && (y==0) && (z==0));
+        return !((x==-999.9) && (y==-999.9) && (z==-999.9));
     }
 
     // Rotate point CCW about x axis by <angle> degrees

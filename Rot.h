@@ -5,6 +5,8 @@
 #include "math.h"
 
 #define ROT_ZERO Rot(0,0,0)
+#define ROT_NULL Rot(-999.9, -999.9, -999.9)
+
 
 // A 3d rotational state
 // CCW=+
@@ -54,7 +56,7 @@ public:
 
     // Conversion to boolean
     explicit operator bool() const {
-        return !((x==0) && (y==0) && (z==0));
+        return !((x==-999.9) && (y==-999.9) && (z==-999.9));
     }
 
     Rot operator-() {

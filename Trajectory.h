@@ -10,7 +10,7 @@ class TrajectoryInfo {
         float prev_time;
         
         float final_time;
-        State final_state
+        State final_state;
 
 public:
         TrajectoryInfo() {
@@ -35,6 +35,14 @@ public:
                 final_state = n_final_state;
         }
 
+        State getRemainingState(State current_state) {
+            return final_state - current_state;
+        }
+
+        float getRemainingTime() {
+            return final_time - timer.dt();
+        }
+
         // returns time in seconds
         float getCurrentTime() {
             if (is_active)
@@ -53,7 +61,7 @@ public:
         }
 
         State getNextState(State current_state) {
-            if (!trajectory.isActive()) {
+            if (!isActive()) {
                 return current_state; // default constructor?
             } else {
                 // Calculate the next appropriate position

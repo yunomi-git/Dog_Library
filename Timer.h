@@ -34,6 +34,7 @@ struct Timer {
             } else {
                 time_finish = (unsigned long) (t * 1000);
             }
+        }
     }
 
     // Returns whether the time has elapsed

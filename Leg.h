@@ -16,7 +16,6 @@
 
 
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// - Trajectory Adjustment
 // - Incorporate default position into startup
 // - Where to place solved kinematics for next foot position?
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -97,7 +96,7 @@ class DogLeg {
 
     RServoDriver *servo_driver;
 
-    // ============= Kinematics =======================
+    // ============= Trajectory =========================
     // Holds a foot position and associated servo angles from IKin
     // Body frame, relative to shoulder
     struct IkinInfo {
@@ -107,13 +106,8 @@ class DogLeg {
 	    float elbow_angle;
 	    bool is_valid;
 
-	    IkinInfo() = default;
-
-	    IkinInfo(Point new_foot_pos, float c, float s, float e) {
-            foot_pos = new_foot_pos;
-	    	chest_angle = c;
-	    	shoulder_angle = s;
-	    	elbow_angle = e;
+	    IkinInfo() {
+	    	is_valid = false;
 	    }
 
 	    void reset() {
@@ -125,17 +119,16 @@ class DogLeg {
 	    }
     };
 
-    IkinInfo foot_candidate_info; // IKIN info for a working leg position. transient. shoulder origin, body frame
-
-    // ============= Trajectory =========================
-    TrajectoryInfo leg_trajectory_oS;
+    TrajectoryInfo<Point> trajectory_oS;
+    IkinInfo next_foot_kinematics; // IKIN info for a working leg position. transient. shoulder origin, body frame
 
     // =========== Parameters ====================
     float L_CHEST;
-
+    Point default_foot_position; // The position the foot goes to when it "resets" its position. Shoulder origin, Body frame
+    							 // Assume the dog starts up, or will soon start up, at this position
 
     // ==================================================
-    // ============= Accessed ===========================
+    // ============= STATE =============================
     // ==================================================
     Point mounting_pos; // Mounting point relative to body origin IN BODY FRAME
     // $$ Manually Set
@@ -144,8 +137,8 @@ class DogLeg {
 public:
     DogLeg() {}
 
-
-    DogLeg(RServoDriver *ndriver, int p1, int p2, int p3, Point mounting_point=POINT_ZERO, float starting_height=L_DEFAULT_HEIGHT) {
+    // default_position: default position relative to body origin
+    DogLeg(RServoDriver *ndriver, int p1, int p2, int p3, Point mounting_point, Point n_default_position_oB) {
     	// Set parameters
     	L_CHEST = L_CHEST_DEFAULT;
 
@@ -161,24 +154,12 @@ public:
         chest_chan = p1;
         servo_driver->setOffset(chest_chan, CHEST_OFFSET_MAIN);
 
-        if (flip_fb) {
-        	servo_driver->reverseDirection(chest_chan);
-        } 
-        if (flip_lr) {
-        	servo_driver->reverseDirection(elbow_chan);
-        	servo_driver->reverseDirection(shoulder_chan);
-        	L_CHEST *= -1;
-        }
-
+        // Parameters
         mounting_pos = mounting_point;
-        foot_pos_default = Point(0, 0, -starting_height);
-        // setToPositionFromShoulder(foot_pos_default, Frame::BODY, 1000);
-        foot_candidate_info.foot_pos = foot_pos_default;
-        inverseKinematics(foot_pos_default);
+        default_foot_position = n_default_position_oB - mounting_pos;
 
-        set_foot_position = foot_pos_default;
-
-        trajectory = LegTrajectoryInfo();
+        // Accessed
+        set_foot_position = default_foot_position;
     }
 
     void flipLR() {
@@ -209,13 +190,6 @@ public:
     // 	sendSignals();
     // }
 
-    Point getFootPosition_oBfB() {
-        return set_foot_position + mounting_pos;
-    }
-
-    Point getMountingPoint() {
-    	return mounting_pos;
-    }
 
 // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // ======== INVERSE KINEMATICS ============~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -276,16 +250,32 @@ private:
     }
 
     // Moves foot to a point in the BODY frame relative to the SHOULDER position.
-    bool inverseKinematics(Point p) {
+    IkinInfo inverseKinematics(Point p) {
     	return inverseKinematics(p.x, p.y, p.z);
     }
 
 
 public:
-// ==============================
-// ====== MOTION COMMANDS =======
-// ==============================
 
+// ========================================
+// ====== STATE ACCESSORS =======
+// ========================================
+    Point getPosition_oBfB() {
+    	if (!set_foot_position) return POINT_NULL;
+        return set_foot_position + mounting_pos;
+    }
+
+    Point getMountingPoint() {
+    	return mounting_pos;
+    }
+
+    Point getDefaultPosition_oBfB() {
+    	return default_foot_position + mounting_pos;
+    }
+// ========================================
+// ====== MOTION COMMANDS/ACCESSORS =======
+// ========================================
+// Commands
     // Moves the foot to the position in the requested frame, relative to the SHOULDER origin
     // Implementation: Set up trajectory information so that operate() can move the foot
     // @param new_foot_pos:       Foot position (in mm) relative to SHOULDER origin, in BODY frame
@@ -293,7 +283,7 @@ public:
     //                            Set to 0/TIME_INSTANT for max speed.
     void moveLegToPositionFromShoulder(Point new_foot_pos, float time=TIME_INSTANT) {       
         // Set up trajectory info based on leg state
-        leg_trajectory_oS.begin(new_foot_pos, time)
+        trajectory_oS.begin(new_foot_pos, time);
     }
 
     // Moves the foot to the position in the requested frame, relative to the BODY origin
@@ -301,12 +291,31 @@ public:
     // @param new_foot_pos:       Foot position (in mm) relative to BODY origin, in BODY frame
     // @param time:               Total movement time desired to move the foot from its current position to the new position.
     //                            Set to 0/TIME_INSTANT for max speed.
-    void moveLegToPositionFromBody(Point new_foot_pos, float time=TIME_INSTANT) {
+    void moveToPositionFromBody(Point new_foot_pos, float time=TIME_INSTANT) {
         moveLegToPositionFromShoulder(new_foot_pos - mounting_pos, time); // may not be accurate
     }
 
+    void adjustLegMotionGoal(Point new_foot_pos) {
+    	trajectory_oS.adjustFinalState(new_foot_pos);
+    }
+
+    void adjustLegMotionTime(float time) {
+    	trajectory_oS.adjustFinalTime(time);
+    }
+
+// Accessors
+    float getLegSpeed() {
+    	float distance_left = (trajectory_oS.getRemainingState(set_foot_position)).norm();
+    	return distance_left/trajectory_oS.getRemainingTime();
+    }
+
+    void cancelTrajectory() {
+    	trajectory_oS.end();
+    }
+// 
+
 // ==============================
-// ====== OPERATIONAL COMMANDS =======
+// ====== UPDATE =======
 // ==============================
 
     // Calculates where the foot position should be based on a trajectory
@@ -316,30 +325,29 @@ public:
     // @return Whether new signals should be sent to the servos
     bool solveMotion() {  
          // No motion to solve if not in trajectory
-        if (!leg_trajectory_oS.isActive()) { return false;}
+        if (!trajectory_oS.isActive()) { return false;}
 
     	// Calculate the next appropriate foot position
-    	Point next_set_foot_position = leg_trajectory_oS.getNextState(set_foot_position);
+    	Point next_set_foot_position = trajectory_oS.getNextState(set_foot_position);
 
         // then passes to IKIN to solve.
         // The result is either the kinematics or a reported error
-        trajectory.next_set_foot_position_kinematics = inverseKinematics(next_set_foot_position);
-        return trajectory.next_set_foot_position_kinematics.is_valid;
+        next_foot_kinematics = inverseKinematics(next_set_foot_position);
+        return next_foot_kinematics.is_valid;
     }
 
     // Sends saved angles to servos. Only use if solveMotion returns true. 
     // Updates appropriate variables
     void sendSignals() {
     	// Sends the signals
-    	IkinInfo kinematics_info = trajectory.next_set_foot_position_kinematics;
-        servo_driver->gotoAngle(chest_chan, kinematics_info.chest_angle);
-        servo_driver->gotoAngle(shoulder_chan, kinematics_info.shoulder_angle);
-        servo_driver->gotoAngle(elbow_chan, kinematics_info.elbow_angle);
+        servo_driver->gotoAngle(chest_chan, next_foot_kinematics.chest_angle);
+        servo_driver->gotoAngle(shoulder_chan, next_foot_kinematics.shoulder_angle);
+        servo_driver->gotoAngle(elbow_chan, next_foot_kinematics.elbow_angle);
 
         // Set state update
-        set_foot_position = kinematics_info.foot_pos;
+        set_foot_position = next_foot_kinematics.foot_pos;
         // Housekeeping
-        trajectory.next_set_foot_position_kinematics.reset();
+        next_foot_kinematics.reset();
     }
 
     // Place this in loop if leg is operating independently
@@ -347,47 +355,36 @@ public:
     	if (isInTrajectory()) {
 	    	if (solveMotion()) 
 		    	sendSignals();
-		    else
-		    	trajectory.end();
+		    else {
+		    	endTrajectory();
+		    }
 		}
     }
 
     // Cancels a trajectory if dog legs not in sync
     void endTrajectory() {
-        trajectory.end();
+        trajectory_oS.end();
+        next_foot_kinematics.reset();
     }
 
     bool isInTrajectory() {
-        return trajectory.isActive();
+        return trajectory_oS.isActive();
     }
 
 
     // Debugging
+    #ifdef DEBUG
     void printIkinAngles() {
-    	Serial.print("IKIN Angles: C: "); Serial.print(foot_candidate_info.chest_angle);
-    	Serial.print("S: "); Serial.print(foot_candidate_info.shoulder_angle);
-    	Serial.print("E: "); Serial.print(foot_candidate_info.elbow_angle);
+    	Serial.print("IKIN Angles: C: "); Serial.print(next_foot_kinematics.chest_angle);
+    	Serial.print(" S: "); Serial.print(next_foot_kinematics.shoulder_angle);
+    	Serial.print(" E: "); Serial.print(next_foot_kinematics.elbow_angle);
     	Serial.println();
     }
+	#endif
+
 };
 
 #endif
-
-// Ground Frame Conversion
-        // if ((frame == Frame::GROUND)) {
-        //     if (!body_orientation) return; // Ensures ground frame is locatable
-        //     new_foot_pos = current_set_foot_position / (*body_orientation) + d_foot_pos; // In ground frame
-        // } else {
-
-    //   Point getCurrentFootPositionFromCentroid(Frame frame) {
-    //     //if (!centroid_oBfG || !isFixed()) return POINT_ZERO;
-
-    //     if (frame == Frame::GROUND) {
-    //         return getCurrentFootPositionFromBody(Frame::GROUND) - (*centroid_oBfG);
-    //     } else { // frame == Frame::BODY
-    //         return getCurrentFootPositionFromBody(Frame::BODY) - (*centroid_oBfG) * (*body_orientation);
-    //     } 
-    // }
 
 // Fixed Leg Processing
        // if (isFixed()) {
@@ -441,21 +438,3 @@ public:
        //      foot_candidate_info.foot_pos = (candidate_set_foot_position_oCfG + (*centroid_oBfG)) * (*body_orientation) - mounting_pos;
        //      // PRINT_POINT("Candidate: ", foot_candidate_info.foot_pos)
        //      return inverseKinematics(foot_candidate_info.foot_pos);
-
-
-// Centroid Motion
-    // // Need to make sure only fixed leg can access?
-    // void setToPositionFromCentroid(Point new_foot_pos_oCf, Frame frame=Frame::BODY, float time=TIME_INSTANT) {
-    //     Point new_foot_pos_oBf;
-    //     if ((frame == Frame::GROUND)) {
-    //         if (!body_orientation) return; // Ensures ground frame is locatable
-    //         new_foot_pos_oBf = new_foot_pos_oCf; // In ground frame
-    //     } else {
-    //         new_foot_pos_oBf = new_foot_pos_oCf / (*body_orientation); // In body frame
-    //     }
-    //     goal_foot_pos_of = new_foot_pos_oBf;
-    //     trajectory_f = goal_foot_pos_of - getCurrentFootPositionFromCentroid(Frame::GROUND);
-    //     traj_start_time = millis();
-
-    //     traj_total_time = max(time, trajectory_f.norm() / (MAX_SPEED/1000.0));;
-    // }
