@@ -16,8 +16,7 @@
 
 
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// - Incorporate default position into startup
-// - Where to place solved kinematics for next foot position?
+// - Kinematics are fucked up because of frame switch...rederive
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 // Dog leg on a body
@@ -123,8 +122,9 @@ class DogLeg {
     IkinInfo next_foot_kinematics; // IKIN info for a working leg position. transient. shoulder origin, body frame
 
     // =========== Parameters ====================
+    int id;
     float L_CHEST;
-    Point default_foot_position; // The position the foot goes to when it "resets" its position. Shoulder origin, Body frame
+    Point default_foot_position_oS; // The position the foot goes to when it "resets" its position. Shoulder origin, Body frame
     							 // Assume the dog starts up, or will soon start up, at this position
 
     // ==================================================
@@ -139,6 +139,7 @@ public:
 
     // default_position: default position relative to body origin
     DogLeg(RServoDriver *ndriver, int p1, int p2, int p3, Point mounting_point, Point n_default_position_oB) {
+    	id = -1;
     	// Set parameters
     	L_CHEST = L_CHEST_DEFAULT;
 
@@ -156,17 +157,17 @@ public:
 
         // Parameters
         mounting_pos = mounting_point;
-        default_foot_position = n_default_position_oB - mounting_pos;
+        default_foot_position_oS = n_default_position_oB - mounting_pos;
 
         // Accessed
-        set_foot_position = default_foot_position;
-    }
-
-    void flipLR() {
-    	servo_driver->reverseDirection(chest_chan);
+        set_foot_position = default_foot_position_oS;
     }
 
     void flipFB() {
+    	servo_driver->reverseDirection(chest_chan);
+    }
+
+    void flipLR() {
 		servo_driver->reverseDirection(elbow_chan);
         servo_driver->reverseDirection(shoulder_chan);
         L_CHEST *= -1;
@@ -183,6 +184,10 @@ public:
     	servo_driver->getServo(chest_chan)->setTable(chest_table);
     	servo_driver->getServo(shoulder_chan)->setTable(shoulder_table);
     	servo_driver->getServo(elbow_chan)->setTable(elbow_table);
+    }
+
+    void setID(int n_id) {
+    	id = n_id;
     }
 
     // void gotoAngles(float chest, float shoulder, float elbow) {
@@ -236,6 +241,9 @@ private:
         
         // Saves the calculated values (as appropriate)
         if (ikin_err) {
+        	if (id != -1) {
+        		Serial.print("Leg "); Serial.print(id); Serial.print(": ");
+        	}
         	Serial.print("Requested Point: "); Point(x, y, z).print();
         	kinematics_info.is_valid = false;
         } else {
@@ -270,7 +278,7 @@ public:
     }
 
     Point getDefaultPosition_oBfB() {
-    	return default_foot_position + mounting_pos;
+    	return default_foot_position_oS + mounting_pos;
     }
 // ========================================
 // ====== MOTION COMMANDS/ACCESSORS =======
@@ -281,7 +289,7 @@ public:
     // @param new_foot_pos:       Foot position (in mm) relative to SHOULDER origin, in BODY frame
     // @param time:               Total movement time desired to move the foot from its current position to the new position.
     //                            Set to 0/TIME_INSTANT for max speed.
-    void moveLegToPositionFromShoulder(Point new_foot_pos, float time=TIME_INSTANT) {       
+    void moveToPositionFromShoulder(Point new_foot_pos, float time=TIME_INSTANT) {       
         // Set up trajectory info based on leg state
         trajectory_oS.begin(new_foot_pos, time);
     }
@@ -292,7 +300,7 @@ public:
     // @param time:               Total movement time desired to move the foot from its current position to the new position.
     //                            Set to 0/TIME_INSTANT for max speed.
     void moveToPositionFromBody(Point new_foot_pos, float time=TIME_INSTANT) {
-        moveLegToPositionFromShoulder(new_foot_pos - mounting_pos, time); // may not be accurate
+        moveToPositionFromShoulder(new_foot_pos - mounting_pos, time); // may not be accurate
     }
 
     void adjustLegMotionGoal(Point new_foot_pos) {
@@ -301,6 +309,10 @@ public:
 
     void adjustLegMotionTime(float time) {
     	trajectory_oS.adjustFinalTime(time);
+    }
+
+    void moveToDefaultPosition() {
+    	moveToPositionFromShoulder(default_foot_position_oS, TIME_INSTANT);
     }
 
 // Accessors

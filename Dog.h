@@ -179,24 +179,9 @@ private:
             anchor_point_oCfF = anchor;
         }
 
-        void switchStance(FootStance new_stance, Point new_anchor_point_oCfF=POINT_ZERO) {
+        void switchStance(FootStance new_stance) {
             if (new_stance == stance) {
                 return;
-            }
-// TODO; check if this check is actually needed
-            // Setting foot onto floor from lifted: needs a new anchor point defined
-            if ((new_stance != FootStance::LIFTED) && (stance == FootStance::LIFTED)) {
-                if (new_anchor_point_oCfF == POINT_ZERO) {
-                    //doError(3);
-                    return;
-                } else {
-                    anchor_point_oCfF = new_anchor_point_oCfF;
-                }
-            // Lifting foor from the floor. Just prints a warning if attempted to set an anchor point
-            } else if ((new_stance == FootStance::LIFTED)) {
-                if (new_anchor_point_oCfF != POINT_ZERO) {
-                    //doError(3);
-                }
             }
 
             stance = new_stance;
@@ -204,8 +189,7 @@ private:
 
         Point getAnchorPoint_oCfF() {
             if (stance == FootStance::LIFTED) {
-                //doError(3);
-                return POINT_ZERO;
+                return POINT_NULL;
             }
             return anchor_point_oCfF;
         }
@@ -266,32 +250,37 @@ public:
 
 
         Point mounting_point;
-        Point starting_height = Point(0, 0, DEFAULT_LEG_HEIGHT);
+        Point starting_position = Point(0, 0, DEFAULT_LEG_HEIGHT);
 
         mounting_point = Point( LENGTH2, -WIDTH2, 0);
-        leg_ur = DogLeg(&servo_driver,  0,  1,  2, mounting_point, mounting_point - starting_height); // in future to enforce level starting, find way to set default_position.z = default_height conveniently.
-        leg_ur.flipLR();
+        leg_ur = DogLeg(&servo_driver,  0,  1,  2, mounting_point, mounting_point - starting_position); // in future to enforce level starting, find way to set default_position.z = default_height conveniently.
+        // leg_ur.flipLR();
         leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
         leg_ur.calibrateServos(LEG_UR_C_ANG_OFS, LEG_UR_S_ANG_OFS, LEG_UR_E_ANG_OFS);
+        leg_ur.setID(0);
 
         mounting_point = Point(-LENGTH2, -WIDTH2, 0);
-        leg_br = DogLeg(&servo_driver,  4,  5,  6, mounting_point, mounting_point - starting_height);
-        leg_br.flipLR();
+        leg_br = DogLeg(&servo_driver,  4,  5,  6, mounting_point, mounting_point - starting_position);
+        // leg_br.flipLR();
         leg_br.flipFB();
         leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
         leg_br.calibrateServos(LEG_BR_C_ANG_OFS, LEG_BR_S_ANG_OFS, LEG_BR_E_ANG_OFS);
+        leg_br.setID(1);
 
         mounting_point = Point(-LENGTH2, WIDTH2, 0);
-        leg_bl = DogLeg(&servo_driver,  8,  9, 10, mounting_point, mounting_point - starting_height);
+        leg_bl = DogLeg(&servo_driver,  8,  9, 10, mounting_point, mounting_point - starting_position);
+        leg_bl.flipLR();
         leg_bl.flipFB();
         leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
         leg_bl.calibrateServos(LEG_BL_C_ANG_OFS, LEG_BL_S_ANG_OFS, LEG_BL_E_ANG_OFS);
+        leg_bl.setID(2);
 
         mounting_point = Point( LENGTH2, WIDTH2, 0);
-        leg_ul = DogLeg(&servo_driver, 12, 13, 14, mounting_point, mounting_point - starting_height);
+        leg_ul = DogLeg(&servo_driver, 12, 13, 14, mounting_point, mounting_point - starting_position);
+        leg_ul.flipLR();
         leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
         leg_ul.calibrateServos(LEG_UL_C_ANG_OFS, LEG_UL_S_ANG_OFS, LEG_UL_E_ANG_OFS);
-
+        leg_ul.setID(3);
 
 
 // PARAMETERS
@@ -301,13 +290,13 @@ public:
 // ACCESSED info
         meas_body_orientation_fG2B = ROT_ZERO;   // Dog will start at level height
         set_body_orientation_fF2B = ROT_ZERO;    // Feet default startup will be at normal orientation
-        set_body_position_oCfF = starting_height;      // Body will start up at default height 
+        set_body_position_oCfF = starting_position;      // Body will start up at default height 
 
         world_centroid_position_oWfG = POINT_ZERO;
 
         // Coordination Setup
         for (int i = 0; i < NUM_LEGS; i++) {
-            foot_note[i].setAnchorPoint(foot[i]->getDefaultPosition_oBfB() - set_body_position_oCfF);
+            foot_note[i].setAnchorPoint(foot[i]->getDefaultPosition_oBfB() + set_body_position_oCfF);
         }
     }
 
@@ -317,7 +306,7 @@ public:
         servo_driver.defaultStartup();
 
     #ifndef DEBUG_COMPUTATION
-        bno_imu.setCollectionMode(IMU::CONTINUOUS);
+        bno_imu.setCollectionMode(IMU::SINGLE);
         bno_imu.defaultStartup();
     #endif
 
@@ -378,7 +367,7 @@ public:
 // ======================================
 // ========= COORDINATION ACCESSORS =====
 // ======================================
-    Point getAnchorPoint(int foot_i, Frame frame=Frame::FLOOR) {
+    Point getAnchorPoint_oC(int foot_i, Frame frame=Frame::FLOOR) {
         if (foot_note[foot_i].isAnchored()) {
             return convertToFrame(foot_note[foot_i].getAnchorPoint_oCfF(), Frame::FLOOR, frame);
         } else {
@@ -445,12 +434,22 @@ public:
 
     // Move to original positions and anchors
     void resetDefaultStance() {
-        // for (int i = 0; i < NUM_LEGS; i++) {
-        //     foot[i]->moveLegToPositionFromShoulder(Point(0, 0, -DEFAULT_LEG_HEIGHT));
-        //     foot_note[i]->setStance(FootStance::PLANTED);
-        // }
-        //operateAllLegs();
-        //sendAllSignals();
+        Point starting_position = Point(0, 0, DEFAULT_LEG_HEIGHT);
+        for (int i = 0; i < NUM_LEGS; i++) {
+            foot[i]->moveToDefaultPosition();
+            foot[i]->operate();
+        }
+
+        meas_body_orientation_fG2B = ROT_ZERO;   // Dog will start at level height
+        set_body_orientation_fF2B = ROT_ZERO;    // Feet default startup will be at normal orientation
+        set_body_position_oCfF = starting_position;      // Body will start up at default height 
+
+        world_centroid_position_oWfG = POINT_ZERO;
+
+        // Coordination Setup
+        for (int i = 0; i < NUM_LEGS; i++) {
+            foot_note[i].setAnchorPoint(foot[i]->getDefaultPosition_oBfB() + set_body_position_oCfF);
+        }
     }
 
     void cancelTrajectory() {
@@ -486,23 +485,24 @@ public:
             foot_note[foot_i].setAnchorPoint(POINT_NULL);
         }
         if  ((old_stance == FootStance::PLANTED) || (new_stance == FootStance::PLANTED)) {
-            Point old_centroid = getCentroid_oBfF();
+            //Point old_centroid = getCentroid_oBfF();
             foot_note[foot_i].switchStance(new_stance);
             Point centroid = getCentroid_oBfF();
             set_body_position_oCfF = -centroid;
             
             for (int i = 0; i < NUM_LEGS; i++) {
                 if (foot_note[i].isAnchored())
-                    foot_note[i].setAnchorPoint(foot[i]->getPosition_oBfB() * set_body_orientation_fF2B - set_body_position_oCfF);
+                    foot_note[i].setAnchorPoint(foot[i]->getPosition_oBfB() * set_body_orientation_fF2B + set_body_position_oCfF);
                     //foot_note[i].anchor_point_oCfF = convertToFrame(foot[i]->getPosition_oBfB(), Frame::BODY, Frame::FLOOR) - set_body_position_oCfF;
             }
 
-            Point centroid_motion_fF = centroid - old_centroid;
-            world_centroid_position_oWfG += convertToFrame(centroid_motion_fF, Frame::FLOOR, Frame::GROUND);
+            //Point centroid_motion_fF = centroid - old_centroid;
+            //world_centroid_position_oWfG += convertToFrame(centroid_motion_fF, Frame::FLOOR, Frame::GROUND);
         } else if  (old_stance == FootStance::LIFTED) {
             // lift->set or lift->plant
-            foot_note[foot_i].setAnchorPoint(foot[foot_i]->getPosition_oBfB() / set_body_orientation_fF2B - set_body_position_oCfF);
+            foot_note[foot_i].setAnchorPoint(foot[foot_i]->getPosition_oBfB() * set_body_orientation_fF2B + set_body_position_oCfF);
         }
+        foot_note[foot_i].switchStance(new_stance);
     }
 
 // ===============================
@@ -612,7 +612,7 @@ public:
 
 #ifdef DEBUG_COMPUTATION
     // Manually feed in orientation values
-    void feedMeasOrientation(Rot orientation) {
+    void feedIMU(Rot orientation) {
         meas_body_orientation_fG2B = orientation;
     }
     // bool fixedLegPresent() {

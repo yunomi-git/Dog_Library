@@ -54,6 +54,10 @@ public:
         z *= k;
     }
 
+    bool operator==(Rot r) {
+       return ((x==r.x) && (y==r.y) && (z==r.z));
+    }
+
     // Conversion to boolean
     explicit operator bool() const {
         return !((x==-999.9) && (y==-999.9) && (z==-999.9));
@@ -70,6 +74,12 @@ public:
         Serial.print(")");
         Serial.println();
     }
+
+    #ifdef DEBUG
+    float norm() {
+        return sqrt(x*x+y*y+z*z);
+    }
+    #endif
 };
 
 #endif
