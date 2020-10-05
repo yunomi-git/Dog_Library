@@ -15,7 +15,7 @@
 // #define DEBUG
 
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// - implement user interface. locomotion control can only interact with this user interface.
+// - implement better way to send signals at the same time...not all necessary checks are occuring
 // - clean up code, fix variable names
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -78,20 +78,20 @@ class RobotDog {
 private:
     // ======================= CALIBRATION ===============================================
     #define LEG_UR_C_ANG_OFS  (0)
-    #define LEG_UR_S_ANG_OFS  (-3)
-    #define LEG_UR_E_ANG_OFS  (6)
+    #define LEG_UR_S_ANG_OFS  (3)
+    #define LEG_UR_E_ANG_OFS  (-6)
 
     #define LEG_BR_C_ANG_OFS  (0)
-    #define LEG_BR_S_ANG_OFS  (3.5)
-    #define LEG_BR_E_ANG_OFS  (1)
+    #define LEG_BR_S_ANG_OFS  (-3.5)
+    #define LEG_BR_E_ANG_OFS  (-1)
 
     #define LEG_BL_C_ANG_OFS  (0)
-    #define LEG_BL_S_ANG_OFS  (1)
-    #define LEG_BL_E_ANG_OFS  (-5)
+    #define LEG_BL_S_ANG_OFS  (-1)
+    #define LEG_BL_E_ANG_OFS  (5)
 
     #define LEG_UL_C_ANG_OFS  (0)
-    #define LEG_UL_S_ANG_OFS  (-1)
-    #define LEG_UL_E_ANG_OFS  (-8)
+    #define LEG_UL_S_ANG_OFS  (1)
+    #define LEG_UL_E_ANG_OFS  (8)
 
     // Servo Calibration Tables
     #define NUM_TABLE_ELEM 19
@@ -118,12 +118,12 @@ private:
     #define DEFAULT_POSITION_oCfF Point(0,0,DEFAULT_LEG_HEIGHT) // Default position relative to the centroid, floor frame
 
     #define IMU_UPDATE_PERIOD 1 // ms, not used
-    #define LEG_UPDATE_PERIOD 3 // ms, not used
+    #define LEG_UPDATE_PERIOD (3.0/1000) // us
 
     #define NUM_LEGS 4
 
     //Timer imu_update_timer;
-    //Timer leg_update_timer;     // in 
+    Timer leg_update_timer;    
     // ============================= INTERNAL ==================================
     // Legs
     RServoDriver servo_driver;
@@ -254,14 +254,14 @@ public:
 
         mounting_point = Point( LENGTH2, -WIDTH2, 0);
         leg_ur = DogLeg(&servo_driver,  0,  1,  2, mounting_point, mounting_point - starting_position); // in future to enforce level starting, find way to set default_position.z = default_height conveniently.
-        // leg_ur.flipLR();
+        leg_ur.flipLR();
         leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
         leg_ur.calibrateServos(LEG_UR_C_ANG_OFS, LEG_UR_S_ANG_OFS, LEG_UR_E_ANG_OFS);
         leg_ur.setID(0);
 
         mounting_point = Point(-LENGTH2, -WIDTH2, 0);
         leg_br = DogLeg(&servo_driver,  4,  5,  6, mounting_point, mounting_point - starting_position);
-        // leg_br.flipLR();
+        leg_br.flipLR();
         leg_br.flipFB();
         leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
         leg_br.calibrateServos(LEG_BR_C_ANG_OFS, LEG_BR_S_ANG_OFS, LEG_BR_E_ANG_OFS);
@@ -269,7 +269,7 @@ public:
 
         mounting_point = Point(-LENGTH2, WIDTH2, 0);
         leg_bl = DogLeg(&servo_driver,  8,  9, 10, mounting_point, mounting_point - starting_position);
-        leg_bl.flipLR();
+        // leg_bl.flipLR();
         leg_bl.flipFB();
         leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
         leg_bl.calibrateServos(LEG_BL_C_ANG_OFS, LEG_BL_S_ANG_OFS, LEG_BL_E_ANG_OFS);
@@ -277,7 +277,7 @@ public:
 
         mounting_point = Point( LENGTH2, WIDTH2, 0);
         leg_ul = DogLeg(&servo_driver, 12, 13, 14, mounting_point, mounting_point - starting_position);
-        leg_ul.flipLR();
+        // leg_ul.flipLR();
         leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
         leg_ul.calibrateServos(LEG_UL_C_ANG_OFS, LEG_UL_S_ANG_OFS, LEG_UL_E_ANG_OFS);
         leg_ul.setID(3);
@@ -315,7 +315,8 @@ public:
             foot[i]->operate();
         }
 
-        //leg_update_timer.reset(LEG_UPDATE_PERIOD);
+        leg_update_timer.usePrecision();
+        leg_update_timer.reset(LEG_UPDATE_PERIOD);
         //imu_update_timer.reset(IMU_UPDATE_PERIOD);
     }
 
@@ -493,7 +494,6 @@ public:
             for (int i = 0; i < NUM_LEGS; i++) {
                 if (foot_note[i].isAnchored())
                     foot_note[i].setAnchorPoint(foot[i]->getPosition_oBfB() * set_body_orientation_fF2B + set_body_position_oCfF);
-                    //foot_note[i].anchor_point_oCfF = convertToFrame(foot[i]->getPosition_oBfB(), Frame::BODY, Frame::FLOOR) - set_body_position_oCfF;
             }
 
             //Point centroid_motion_fF = centroid - old_centroid;
@@ -515,66 +515,77 @@ public:
         meas_body_orientation_fG2B = bno_imu.getOrientation();
         #endif
 
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // ~~~~ Update body motion (for anchored legs) ~~~~
-        if (body_position_trajectory_oCfF.isActive() || body_orientation_trajectory_fF2B.isActive()) {
-            // Updates the next pose on the trajectory
-            Point next_body_position_oCfF = body_position_trajectory_oCfF.getNextState(set_body_position_oCfF);
-            Rot next_body_orientation_fF2B = body_orientation_trajectory_fF2B.getNextState(set_body_orientation_fF2B);
-
-            // then solves IKIN for all anchored legs
-            for (int i = 0; i < NUM_LEGS; i++) {
-                if (foot_note[i].isAnchored()) {
-                    foot[i]->moveToPositionFromBody((foot_note[i].getAnchorPoint_oCfF() - next_body_position_oCfF) / next_body_orientation_fF2B, TIME_INSTANT); // TODO: Check that this conversion is correct
-                }
-            }
-
-            // Do kinematic checks and sends the signals
-            // First checks if anchored legs motions are possible
+        if (leg_update_timer.timeOut()) {
+            leg_update_timer.reset();
             bool anchored_leg_motion_feasible = true;
-            for (int i = 0; i < NUM_LEGS; i++) {
-                if (foot_note[i].isAnchored()) {
-                    if(!(foot[i]->solveMotion())) { // Failure detected
-                        anchored_leg_motion_feasible = false;
-                        break;
+            // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // ~~~~ Solves body motion (for anchored legs) ~~~~
+            if (body_position_trajectory_oCfF.isActive() || body_orientation_trajectory_fF2B.isActive()) {
+                // Updates the next pose on the trajectory
+                Point next_body_position_oCfF = body_position_trajectory_oCfF.getNextState(set_body_position_oCfF);
+                Rot next_body_orientation_fF2B = body_orientation_trajectory_fF2B.getNextState(set_body_orientation_fF2B);
+
+                // then solves IKIN for all anchored legs
+                for (int i = 0; i < NUM_LEGS; i++) {
+                    if (foot_note[i].isAnchored()) {
+                        //Serial.print(foot[i]->getID()); Serial.print(": ");
+                        //((foot_note[i].getAnchorPoint_oCfF()- next_body_position_oCfF)/ next_body_orientation_fF2B).print();
+                        foot[i]->moveToPositionFromBody((foot_note[i].getAnchorPoint_oCfF() - next_body_position_oCfF) / next_body_orientation_fF2B, TIME_INSTANT); // TODO: Check that this conversion is correct
+                    }
+                }
+
+                // Do kinematic checks and sends the signals
+                // First checks if anchored legs motions are possible
+                for (int i = 0; i < NUM_LEGS; i++) {
+                    if (foot_note[i].isAnchored()) {
+                        foot[i]->solveMotion();
+                        if(!(foot[i]->kinematicsIsValid())) { // Failure detected
+                            anchored_leg_motion_feasible = false;
+                            break;
+                        }
+                    }
+                }
+
+                // If so, saves values
+                if (anchored_leg_motion_feasible) {
+                    set_body_orientation_fF2B = next_body_orientation_fF2B;
+                    set_body_position_oCfF = next_body_position_oCfF;
+                } else { // Otherwise, cancels the body trajectories
+                    body_orientation_trajectory_fF2B.end();
+                    body_position_trajectory_oCfF.end();
+
+                    // Feet should not have trajectories, but adds redundancy
+                    for (int i = 0; i < NUM_LEGS; i++) {
+                        if (foot_note[i].isAnchored()) {
+                            foot[i]->endTrajectory();
+                        } 
                     }
                 }
             }
 
-            // If so, sends motion signals and saves values
-            if (anchored_leg_motion_feasible) {
-                for (int i = 0; i < NUM_LEGS; i++) {
-                    if (foot_note[i].isAnchored()) {
-                        foot[i]->sendSignals();
-                    } 
-                }
 
-                set_body_orientation_fF2B = next_body_orientation_fF2B;
-                set_body_position_oCfF = next_body_position_oCfF;
-            } else { // Otherwise, cancels the body trajectories
-                body_orientation_trajectory_fF2B.end();
-                body_position_trajectory_oCfF.end();
 
-                // Feet should not have trajectories, but adds redundancy
-                for (int i = 0; i < NUM_LEGS; i++) {
-                    if (foot_note[i].isAnchored()) {
-                        foot[i]->cancelTrajectory();
-                    } 
+            // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // ~~~~ Solves individual leg motion (for lifted legs) ~~~~
+            for (int i = 0; i < NUM_LEGS; i++) {
+                if ((foot_note[i].getStance() == FootStance::LIFTED)) {
+                    foot[i]->solveMotion();
                 }
             }
-        }
 
-
-
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // ~~~~ Update individual leg motion (for lifted legs) ~~~~
-        for (int i = 0; i < NUM_LEGS; i++) {
-            if ((foot_note[i].getStance() == FootStance::LIFTED) && foot[i]->isInTrajectory()) {
-                if(foot[i]->solveMotion()) {
-                    foot[i]->sendSignals();
+            // ~~~~~~~~~~~~~~~~~~
+            // ~~ Send the signals ~~~
+            for (int i = 0; i < NUM_LEGS; i++) {
+                if (foot_note[i].isAnchored()) {
+                    if (anchored_leg_motion_feasible)
+                        foot[i]->sendSignals();
                 } else {
-                    foot[i]->endTrajectory();
-                }
+                    if (foot[i]->kinematicsIsValid()) {
+                        foot[i]->sendSignals();
+                    } else {
+                        foot[i]->endTrajectory();
+                    }
+                } 
             }
         }
 

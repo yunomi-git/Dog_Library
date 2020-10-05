@@ -9,12 +9,6 @@
 #include <Rot.h>
 #include "Trajectory.h"
 
-
-   
-
- // #define DEBUG
-
-
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // - Kinematics are fucked up because of frame switch...rederive
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -65,8 +59,8 @@ enum class OriginReference{BODY, SHOULDER};
 
 class DogLeg {
     #define CHEST_OFFSET_MAIN 0
-    #define SHOULDER_OFFSET_MAIN -15
-    #define ELBOW_OFFSET_MAIN -125
+    #define SHOULDER_OFFSET_MAIN 15
+    #define ELBOW_OFFSET_MAIN 125
 
     #define WISHBONE_ANGLE 155
 
@@ -163,6 +157,14 @@ public:
         set_foot_position = default_foot_position_oS;
     }
 
+    void setMountingPoint(Point n_mounting_point) {
+    	mounting_pos = n_mounting_point;
+    }
+
+    void setDefaultPosition(Point n_default_position_oB) {
+    	default_foot_position_oS = n_default_position_oB;
+    }
+
     void flipFB() {
     	servo_driver->reverseDirection(chest_chan);
     }
@@ -190,10 +192,7 @@ public:
     	id = n_id;
     }
 
-    // void gotoAngles(float chest, float shoulder, float elbow) {
-    // 	angles_candidate = servo_angles(chest, shoulder, elbow);
-    // 	sendSignals();
-    // }
+
 
 
 // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -203,41 +202,25 @@ private:
 	IkinInfo inverseKinematics(float x, float y, float z) {
 		IkinInfo kinematics_info;
         // x_ and z_ are the x and z coordinates in the reference plane coincident with the arm plane
-        
-        // // Impossible position check
-        // if ((y*y + z*z - L_CHEST*L_CHEST) < 0) 	return false;
         float x_ = x;
-        float z_ = sqrt(y*y + z*z - L_CHEST*L_CHEST);
+        float z_ = -sqrt(y*y + z*z - L_CHEST*L_CHEST);
 
-        // Converts values to state
-        float l_arm_eff = sqrt(x_*x_ + z_*z_);
-        float angle_shoulder_eff = atan2(x_, z_) RAD;
-        float angle_chest = 90 - (atan2(z_, L_CHEST) RAD - atan2(-y, -z) RAD);
+        // Solve for chest angle
+        float angle_chest = atan2(y, -z) RAD - atan2(L_CHEST, -z_) RAD;
 
-  	    // Solve for shoulder, elbow angles
-        // Angle from forearm to upper arm. 
-        float angle_elbow_relative;
-        // Angle of shoulder
-        float angle_shoulder;
-        
-        if (L_FOREARM == L_UPPERARM) { // Optimization if arm lengths are the same
-            angle_elbow_relative = 2*asin(l_arm_eff / (2 * L_FOREARM)) RAD;
-            angle_shoulder = angle_shoulder_eff - (180.0 - angle_elbow_relative) * 0.5;
-        } else {
-            // Note: acos is always positive, so joint never inverts!
-            angle_elbow_relative = acos((L_FOREARM*L_FOREARM + L_UPPERARM*L_UPPERARM - l_arm_eff*l_arm_eff) /(2 * L_FOREARM * L_UPPERARM)) RAD; 
-            angle_shoulder = angle_shoulder_eff - asin(L_FOREARM / l_arm_eff * sin(angle_elbow_relative DEG)) RAD;
-        }
-
-        // Angle of elbow
-        float angle_elbow = 180 + angle_shoulder - angle_elbow_relative;
-        angle_elbow -= WISHBONE_ANGLE; // To get servo angle
+  	    // Solve for shoulder, elbow angles      
+        // Note: acos is always positive, so joint never inverts!
+        float effective_leg_length = sqrt(x_*x_ + z_*z_);
+        float effective_leg_angle = -atan2(x_, -z_) RAD;
+        float interior_elbow_angle = acos((L_FOREARM*L_FOREARM + L_UPPERARM*L_UPPERARM - effective_leg_length*effective_leg_length) /(2 * L_FOREARM * L_UPPERARM)) RAD; 
+        float angle_shoulder = asin(L_FOREARM / effective_leg_length * sin(interior_elbow_angle DEG)) RAD + effective_leg_angle;
+        float angle_elbow = -(180 - angle_shoulder - interior_elbow_angle) + WISHBONE_ANGLE; // servo angle is offset from actual elbow by WISHBONE
 
         // Check if returned angles are feasible
         bool ikin_err = false;
         if (!WITHIN(angle_chest, -75, 75)) 					{Serial.print("IKIN ERR: Chest at "); 			 Serial.println(angle_chest); 					ikin_err = true;}
-        if (!WITHIN(angle_elbow, -185, -67)) 				{Serial.print("IKIN ERR: Elbow at "); 			 Serial.println(angle_elbow); 					ikin_err = true;}
-        if (!WITHIN(angle_shoulder - angle_elbow, 20, 160)) {Serial.print("IKIN ERR: Shoulder - Elbow at "); Serial.println(angle_shoulder - angle_elbow);  ikin_err = true;}
+        if (!WITHIN(angle_elbow,  67, 185)) 				{Serial.print("IKIN ERR: Elbow at "); 			 Serial.println(angle_elbow); 					ikin_err = true;}
+        if (!WITHIN(angle_elbow - angle_shoulder, 20, 160)) {Serial.print("IKIN ERR: Shoulder - Elbow at "); Serial.println(angle_shoulder - angle_elbow);  ikin_err = true;}
         
         // Saves the calculated values (as appropriate)
         if (ikin_err) {
@@ -263,6 +246,7 @@ private:
     }
 
 
+
 public:
 
 // ========================================
@@ -279,6 +263,10 @@ public:
 
     Point getDefaultPosition_oBfB() {
     	return default_foot_position_oS + mounting_pos;
+    }
+
+    int getID() {
+    	return id;
     }
 // ========================================
 // ====== MOTION COMMANDS/ACCESSORS =======
@@ -320,10 +308,6 @@ public:
     	float distance_left = (trajectory_oS.getRemainingState(set_foot_position)).norm();
     	return distance_left/trajectory_oS.getRemainingTime();
     }
-
-    void cancelTrajectory() {
-    	trajectory_oS.end();
-    }
 // 
 
 // ==============================
@@ -335,23 +319,20 @@ public:
     // If no trajectory, does nothing
     // Implementation: Given trajectory, calculates candidate foot information based on time
     // @return Whether new signals should be sent to the servos
-    bool solveMotion() {  
-         // No motion to solve if not in trajectory
-        if (!trajectory_oS.isActive()) { return false;}
+    void solveMotion() {  
+        if (trajectory_oS.isActive()) { 
+ 			Point next_set_foot_position = trajectory_oS.getNextState(set_foot_position);
+        	next_foot_kinematics = inverseKinematics(next_set_foot_position);
+        }   
+    }
 
-    	// Calculate the next appropriate foot position
-    	Point next_set_foot_position = trajectory_oS.getNextState(set_foot_position);
-
-        // then passes to IKIN to solve.
-        // The result is either the kinematics or a reported error
-        next_foot_kinematics = inverseKinematics(next_set_foot_position);
-        return next_foot_kinematics.is_valid;
+    bool kinematicsIsValid() {
+    	return next_foot_kinematics.is_valid;
     }
 
     // Sends saved angles to servos. Only use if solveMotion returns true. 
     // Updates appropriate variables
     void sendSignals() {
-    	// Sends the signals
         servo_driver->gotoAngle(chest_chan, next_foot_kinematics.chest_angle);
         servo_driver->gotoAngle(shoulder_chan, next_foot_kinematics.shoulder_angle);
         servo_driver->gotoAngle(elbow_chan, next_foot_kinematics.elbow_angle);
@@ -365,7 +346,8 @@ public:
     // Place this in loop if leg is operating independently
     void operate() {
     	if (isInTrajectory()) {
-	    	if (solveMotion()) 
+	    	solveMotion();
+	    	if (kinematicsIsValid())
 		    	sendSignals();
 		    else {
 		    	endTrajectory();
@@ -391,6 +373,12 @@ public:
     	Serial.print(" S: "); Serial.print(next_foot_kinematics.shoulder_angle);
     	Serial.print(" E: "); Serial.print(next_foot_kinematics.elbow_angle);
     	Serial.println();
+    }
+
+    void gotoAngles(float chest, float shoulder, float elbow) {
+        servo_driver->gotoAngle(chest_chan, chest);
+        servo_driver->gotoAngle(shoulder_chan, shoulder);
+        servo_driver->gotoAngle(elbow_chan, elbow);
     }
 	#endif
 

@@ -13,10 +13,9 @@ struct Timer {
     bool using_precision;
 
     Timer(unsigned long ntime_finish=0) {
-        time_finish = ntime_finish;
         checkTime = millis;
-        reset();
         using_precision = false;
+        reset(ntime_finish);   
     }
 
     void usePrecision()  {
@@ -28,7 +27,7 @@ struct Timer {
     // Starts the timer to run for t ms.
     void reset(float t=0) {
         time_start = checkTime();
-        if (t) { // If t is unset, reset with existing time. Else, reset with new time
+        if (t != 0) { // If t is unset, reset with existing time. Else, reset with new time
             if (using_precision) {
                 time_finish = (unsigned long) (t * 1000000);
             } else {

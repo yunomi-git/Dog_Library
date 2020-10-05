@@ -19,6 +19,7 @@ class RServoDriver : public Adafruit_PWMServoDriver {
 #define DEF_SIG_MID	   2430
 
 #define MAX_SERVO_NUM	16
+#define TABLE_MID_INDEX 9
 
 protected:
 	struct servo_info {
@@ -26,7 +27,8 @@ protected:
 		float sig_max;
 		float angle_max;
 		float angle_min;
-		float angle_offset; // Horn starting angle in deg CCW (RHR) relative to zero signal (2455 is no table, table[9] if there is table)
+		float angle_offset; // Horn starting angle AKA zero signal angle relative to desired frame origin in deg CCW (RHR).  
+							// zs is (2455 is no table, table[9] if there is table)
 		int direction;
 
 		int *signals_table; // Table of angles. size should be 19. angle ordered as [-90, -80, -70....0...80, 90]
@@ -53,7 +55,7 @@ protected:
 				if (angle > 90)  {angle = 90; Serial.println("cut to 90");}
 				if (angle < -90) {angle = -90; Serial.println("cut to -90");}
 				// extract the base index. ex -87 -> -8 -> 1 (index)
-				int idx_base = (int) (angle/10) + 9;
+				int idx_base = (int) (angle/10) + TABLE_MID_INDEX;
 				int idx_interp;
 				// obtain the index to interpolate to
 				if (angle > 0) 	idx_interp = idx_base + 1; 
@@ -109,7 +111,6 @@ protected:
 
 	servo_info servo_list[MAX_SERVO_NUM];
 
-	// bool reverse_direction;	// normal: CCW is + | reverse: CW is +
 public:
 	RServoDriver(float nspeed = 60) : Adafruit_PWMServoDriver() {
 	}
@@ -139,11 +140,6 @@ public:
 
 	servo_info * getServo(int channel) {
 		return &(servo_list[channel]);
-	}
-
-	// Useful for maintaining speed
-	void operate() {
-		//servo.writeMicroseconds(current_pwm);
 	}
 };
 
