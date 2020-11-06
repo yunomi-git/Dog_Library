@@ -3,6 +3,7 @@
 
 #include <arduino.h>
 
+// TODO: cant do Timer a; a = Timer(xxx); or an error will happen...not sure why
 // Used to time the length of functions or create a delay.
 // Can be set to check milliseconds or microseconds.
 // Interaction is always in seconds
@@ -27,7 +28,7 @@ struct Timer {
     // Starts the timer to run for t ms.
     void reset(float t=0) {
         time_start = checkTime();
-        if (t != 0) { // If t is unset, reset with existing time. Else, reset with new time
+        if (t > 0) { // If t is unset, reset with existing time. Else, reset with new time
             if (using_precision) {
                 time_finish = (unsigned long) (t * 1000000);
             } else {

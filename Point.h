@@ -12,6 +12,8 @@
 
 // A point in 3d cartesian space
 
+enum class Axis {X, Y, Z};
+
 struct Point {
     float x;
     float y;

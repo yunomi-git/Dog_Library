@@ -52,8 +52,8 @@ protected:
 				// First bring angle to correct frame
 				angle = direction * (angle - angle_offset);
 				// Limit the angle
-				if (angle > 90)  {angle = 90; Serial.println("cut to 90");}
-				if (angle < -90) {angle = -90; Serial.println("cut to -90");}
+				if (angle > 90)  {Serial.print(angle); angle = 90; Serial.println(" cut to 90");}
+				if (angle < -90) {Serial.print(angle); angle = -90; Serial.println(" cut to -90");}
 				// extract the base index. ex -87 -> -8 -> 1 (index)
 				int idx_base = (int) (angle/10) + TABLE_MID_INDEX;
 				int idx_interp;
@@ -112,12 +112,12 @@ protected:
 	servo_info servo_list[MAX_SERVO_NUM];
 
 public:
-	RServoDriver(float nspeed = 60) : Adafruit_PWMServoDriver() {
+	RServoDriver() : Adafruit_PWMServoDriver() {
 	}
 
 	void defaultStartup() {
 		begin();
-  		setPWMFreq(DEF_PWM);  // This is the maximum PWM frequency
+  		setPWMFreq(DEF_PWM);  // set from 40 to 1600
 
 	    // if you want to really speed stuff up, you can go into 'fast 400khz I2C' mode
 	    // some i2c devices dont like this so much so if you're sharing the bus, watch

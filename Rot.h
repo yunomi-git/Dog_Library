@@ -75,11 +75,11 @@ public:
         Serial.println();
     }
 
-    #ifdef DEBUG
+    //#ifdef DEBUG
     float norm() {
         return sqrt(x*x+y*y+z*z);
     }
-    #endif
+    //#endif
 };
 
 #endif
