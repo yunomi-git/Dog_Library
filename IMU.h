@@ -21,6 +21,7 @@ struct IMU {
     collection_mode cmode;
 
     int IMU_z_num_turns = 0;
+    Rot raw_orientation;
 
     // Point orientation_signs;  // For customization of axes
     template<typename T> struct sensor_history_info {
@@ -103,6 +104,8 @@ public:
         // Crystal
         bno.setExtCrystalUse(true);
 
+        raw_orientation = ROT_ZERO;
+
         // Wait for startup
         delay(2000);
         // timer = millis();
@@ -122,7 +125,7 @@ public:
         if (cmode == CONTINUOUS) {
             return orientation_info.value;
         } else {
-            return getRawOrientation();
+            return raw_orientation;
         }
     }
 
@@ -152,7 +155,7 @@ public:
         imu::Vector<3> euler = q.toEuler();
         euler.toDegrees();
 
-        return Rot(euler.z(), -euler.y(), euler.x()) - orientation_offsets; // Technically not correct? Rotation matrices may not concatenate as subtraction...but accurate enough
+        return Rot(euler.z(), -euler.y(), -euler.x()) - orientation_offsets; // Technically not correct? Rotation matrices may not concatenate as subtraction...but accurate enough
     }
 
     Point getRawLinearAcceleration() {
@@ -168,7 +171,7 @@ public:
 // Processes sensor data
     void operate() {
         // Continuous Z rotation
-        Rot raw_orientation = getRawOrientation();
+        raw_orientation = getRawOrientation();
 
         // the "measured" yaw value
         float IMU_z = raw_orientation.z;

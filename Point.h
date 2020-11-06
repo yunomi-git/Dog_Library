@@ -5,9 +5,14 @@
 #include "math.h"
 #include "Rot.h"
 
+#define PRINT_POINT(a, b) Serial.print(a); b.print();
+
 #define POINT_ZERO Point(0,0,0)
+#define POINT_NULL Point(-999.9, -999.9, -999.9)
 
 // A point in 3d cartesian space
+
+enum class Axis {X, Y, Z};
 
 struct Point {
     float x;
@@ -113,7 +118,7 @@ public:
 // Helper Functions
     // Conversion to boolean
     explicit operator bool() const {
-        return !((x==0) && (y==0) && (z==0));
+        return !((x==-999.9) && (y==-999.9) && (z==-999.9));
     }
 
     // Rotate point CCW about x axis by <angle> degrees
@@ -140,7 +145,7 @@ public:
      				 							   z);
     }
 
-    // Rotates the point about origin by given angles in degrees in order of:
+    // Rotates the point about origin by given angles CCW in degrees in order of:
     // in GROUND/ABSOLUTE frame, 		x axis -> y axis -> z axis or,
     // in BODY/MOVING frame, 			z axis -> y axis -> x axis.
     // Note that x=roll, y=pitch, z=yaw and CCW is +.

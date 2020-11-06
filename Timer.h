@@ -3,28 +3,55 @@
 
 #include <arduino.h>
 
+// TODO: cant do Timer a; a = Timer(xxx); or an error will happen...not sure why
 // Used to time the length of functions or create a delay.
+// Can be set to check milliseconds or microseconds.
+// Interaction is always in seconds
 struct Timer {
-    unsigned int time_start;
-    unsigned int time_finish;
+    unsigned long time_start;
+    unsigned long time_finish;
+    unsigned long (*checkTime)();
+    bool using_precision;
+
+    Timer(unsigned long ntime_finish=0) {
+        checkTime = millis;
+        using_precision = false;
+        reset(ntime_finish);   
+    }
+
+    void usePrecision()  {
+        checkTime = micros;
+        using_precision = true;
+        reset();
+    }
 
     // Starts the timer to run for t ms.
-    void reset(unsigned int t=0) {
-        time_start = millis();
-        if (t) {time_finish = t;}
+    void reset(float t=0) {
+        time_start = checkTime();
+        if (t > 0) { // If t is unset, reset with existing time. Else, reset with new time
+            if (using_precision) {
+                time_finish = (unsigned long) (t * 1000000);
+            } else {
+                time_finish = (unsigned long) (t * 1000);
+            }
+        }
     }
 
     // Returns whether the time has elapsed
     bool timeOut() {
-        if (millis() - time_start >= time_finish) {
+        if (checkTime() >= time_start + time_finish) {
             return true;
         } else {
             return false;
         }
     }
 
-    int dt() {
-        return millis() - time_start;
+    float dt() {
+        if (using_precision) {
+            return (checkTime() - time_start) / 1000000.0;
+        } else {
+            return (checkTime() - time_start) / 1000.0;
+        }
     }
 };
 

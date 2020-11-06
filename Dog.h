@@ -1,7 +1,6 @@
 #ifndef __DOG__
 #define __DOG__
 
-
 #include "RServoDriver.h"
 #include "Leg.h"
 
@@ -11,71 +10,88 @@
 #include "Rot.h"
 #include "IMU.h"
 #include "Timer.h"
+#include "Trajectory.h"
 
-// Unless otherwise noted, all "positions" are relative to body origin...update this
+// #define DEBUG
+
+// TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// - implement better way to send signals at the same time...not all necessary checks are occuring
+// - clean up code, fix variable names
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// USAGE DETAILS
+// Nomenclature:
+//  - Foot is used interchangeably with Leg. Foot is generally used to refer to the contact point.
+//    Leg is generally used to refer to motions.
+//
+// FOOT STANCE
+// - Foot may be set to various stances:
+//   Planted   : Foot is constant in FLOOR frame (ie is in contact with a surface). Used in centroid calculation
+//   Set       : Foot is constant in FLOOR frame (ie is in contact with a surface). NOT Used in centroid calculation
+//   Lifted    : Foot is not in contact with the floor. 
+//   (Anchored): Set or Planted
+//
+// ORIENTATION
+// - All Leg commands are sent in body frame. Dog class responsible for correct frame conversion.
+//
+/* ============ FRAMES ==========================
+ * GROUND - Static reference frame of the world.
+ *Frame::BODY   - Frame attached to the body.
+ * FLOOR  - Governed by foot placement wrt ground frame (ex. walking up a slope) 
+ * All frames currently have body origin (9/9/20)
+ *
+ * Measurements:
+ * -Frame::BODY wrt GROUND  : measured by IMU. "imu" orientation
+ * -Frame::BODY wrt FLOOR   : "set" orientation, kinematically driven 
+ * - FLOOR wrt GROUND : 1. (imu /? set) orientation = floor orientation <- using this: easiest to implement (see notes locomotion/centroid(1))
+ *                      2. best fit through feet points in ground plane 
+ * note: by default all orientations measured wrt ground.
+ */
+
+/**
+* IMPLEMENTATION DETAILS
+* - All points are in GROUND FRAME and RELATIVE TOFrame::BODY ORIGIN unless otherwise noted
+* - o_f_: origin {body, centroid, shoulder}, frame {body, ground, floor}
+* 
+* - Convert ground to body frame: p_B = p_G / imu_orientation
+* - Convert body to ground frame: p_G = p_B * (imu_orientation)
+*
+* - Convert frame A to B: p_B = p_A / A2B_orientation
+* - Convert frame B to A: p_A = p_B * A2B_orientation
+*
+* Frame conventions:
+* - Anchor points: Floor frame centroid origin. // anchor point (fFoC) + centroid (fFoB) = leg position (fFoB)
+* - Centroid: Floor Frame (but use in ground frame) body origin
+* - DogLeg input/return: Body frame body origin
+* - Create a new variable whenever frame conversion occurs
+*
+* All set_* variables must be set whenever signals are sent
+* 
+*/
+
+
+
+enum class Frame {GROUND, BODY, FLOOR};
+enum class FootStance {PLANTED, SET, LIFTED};
 
 class RobotDog {
-    // #define LEG_UR_C_ANG_OFS  (4)
-    // #define LEG_UR_S_ANG_OFS  (-2)
-    // #define LEG_UR_E_ANG_OFS  (9)
-    // #define LEG_BR_C_ANG_OFS  (-2.5)
-    // #define LEG_BR_S_ANG_OFS  (3)
-    // #define LEG_BR_E_ANG_OFS  (3.5)
-    // #define LEG_BL_C_ANG_OFS  (-8)
-    // #define LEG_BL_S_ANG_OFS  (1.5)
-    // #define LEG_BL_E_ANG_OFS  (0.5)
-    // #define LEG_UL_C_ANG_OFS  (5)
-    // #define LEG_UL_S_ANG_OFS  (-4)
-    // #define LEG_UL_E_ANG_OFS  (-3.5)
+private:
+    // ======================= CALIBRATION ===============================================
     #define LEG_UR_C_ANG_OFS  (0)
-    #define LEG_UR_S_ANG_OFS  (-3)
-    #define LEG_UR_E_ANG_OFS  (6)
+    #define LEG_UR_S_ANG_OFS  (3)
+    #define LEG_UR_E_ANG_OFS  (-6)
 
     #define LEG_BR_C_ANG_OFS  (0)
-    #define LEG_BR_S_ANG_OFS  (3.5)
-    #define LEG_BR_E_ANG_OFS  (1)
+    #define LEG_BR_S_ANG_OFS  (-3.5)
+    #define LEG_BR_E_ANG_OFS  (-1)
 
     #define LEG_BL_C_ANG_OFS  (0)
-    #define LEG_BL_S_ANG_OFS  (1)
-    #define LEG_BL_E_ANG_OFS  (-5)
+    #define LEG_BL_S_ANG_OFS  (-1)
+    #define LEG_BL_E_ANG_OFS  (5)
 
     #define LEG_UL_C_ANG_OFS  (0)
-    #define LEG_UL_S_ANG_OFS  (-1)
-    #define LEG_UL_E_ANG_OFS  (-8)
-
-    #define DEFAULT_LEG_HEIGHT 100 //mm
-    #define WIDTH2 60 // half total width
-    #define LENGTH2 112.5 // half total length
-    #define STEP_HEIGHT 30
-
-    #define IMU_UPDATE_PERIOD 1 // ms
-    #define LEG_UPDATE_PERIOD 3 // ms
-
-    #define NUM_LEGS 4
-
-    // Legs
-    RServoDriver servo_driver;
-
-    DogLeg leg_ur;
-    DogLeg leg_ul;
-    DogLeg leg_br;
-    DogLeg leg_bl;
-
-    DogLeg *leg[NUM_LEGS]; 
-
-    Timer leg_update_timer;     // in s
-
-    Point COM; // COM relative to default body origin
-
-    // IMU
-    IMU bno_imu;
-    Timer imu_update_timer;
-    bool use_imu;
-    Rot desired_orientation;    // Desired orientation of the body
-
-    // Pose/State
-    Point centroid_oBfG;        // Centroid location in GROUND frame relative to BODY origin
-    Rot body_orientation;       // Actual orientation of the body, relative to stagnant ground frame
+    #define LEG_UL_S_ANG_OFS  (1)
+    #define LEG_UL_E_ANG_OFS  (8)
 
     // Servo Calibration Tables
     #define NUM_TABLE_ELEM 19
@@ -92,678 +108,637 @@ class RobotDog {
     int table_shoulder_ul[NUM_TABLE_ELEM] = {1370,1480,1600,1715,1840,1950,2080,2190,2320,2440,2560,2680,2790,2900,3010,3140,3245,3345,3460};
     int table_elbow_ul[NUM_TABLE_ELEM]    = {1387,1498,1614,1700,1810,1940,2060,2175,2315,2440,2560,2680,2780,2915,3020,3125,3240,3340,3445};
 
-public:
-    RobotDog() {
-        // Set up legs
-        leg[0] = &leg_ur;
-        leg[1] = &leg_br;
-        leg[2] = &leg_bl;
-        leg[3] = &leg_ul;
+    // ===================== PARAMETERS =============================================
 
-        // COM = Point(3, 0, 9.5);
-        COM = Point(0,0,0);
+    #define DEFAULT_LEG_HEIGHT 100 //mm
+    #define WIDTH2 60 // half total width
+    #define LENGTH2 112.5 // half total length
+    #define STEP_HEIGHT 30
 
-        leg_ur = DogLeg(&servo_driver,  0,  1,  2, false, false, &body_orientation, Point( LENGTH2,  WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
-        leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
-        leg_ur.calibrateServos(LEG_UR_C_ANG_OFS, LEG_UR_S_ANG_OFS, LEG_UR_E_ANG_OFS);
-        leg_ur.setCentroidRef(&centroid_oBfG);
+    #define DEFAULT_POSITION_oCfF Point(0,0,DEFAULT_LEG_HEIGHT) // Default position relative to the centroid, floor frame
 
-        leg_br = DogLeg(&servo_driver,  4,  5,  6, false,  true, &body_orientation, Point(-LENGTH2,  WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
-        leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
-        leg_br.calibrateServos(LEG_BR_C_ANG_OFS, LEG_BR_S_ANG_OFS, LEG_BR_E_ANG_OFS);
-        leg_br.setCentroidRef(&centroid_oBfG);
+    #define IMU_UPDATE_PERIOD 1 // ms, not used
+    #define LEG_UPDATE_PERIOD (3.0/1000) // s
 
-        leg_bl = DogLeg(&servo_driver,  8,  9, 10,  true,  true, &body_orientation, Point(-LENGTH2, -WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
-        leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
-        leg_bl.calibrateServos(LEG_BL_C_ANG_OFS, LEG_BL_S_ANG_OFS, LEG_BL_E_ANG_OFS);
-        leg_bl.setCentroidRef(&centroid_oBfG);
+    #define NUM_LEGS 4
 
-        leg_ul = DogLeg(&servo_driver, 12, 13, 14,  true, false, &body_orientation, Point( LENGTH2, -WIDTH2, 0) - COM, DEFAULT_LEG_HEIGHT);
-        leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
-        leg_ul.calibrateServos(LEG_UL_C_ANG_OFS, LEG_UL_S_ANG_OFS, LEG_UL_E_ANG_OFS);
-        leg_ul.setCentroidRef(&centroid_oBfG);
+    //Timer imu_update_timer;
+    Timer leg_update_timer;    
+    // ============================= INTERNAL ==================================
+    // Legs
+    RServoDriver servo_driver;
+
+    DogLeg leg_ur;
+    DogLeg leg_ul;
+    DogLeg leg_br;
+    DogLeg leg_bl;
+
+    DogLeg *foot[NUM_LEGS]; 
 
 
-        // Other setup
-        desired_orientation = ROT_ZERO;
-        use_imu = true;
+    // IMU
+    IMU bno_imu;
 
-        updateCentroid();
+// ACCESSED
+    // ========= Pose/State ============
+    // Measured
+    Rot   meas_body_orientation_fG2B;   // Actual orientation of the body, relative to stagnant ground frame
+    // $ Manually Set
+    Rot   set_body_orientation_fF2B;    // Kinematically-set orientation of the body, relative to floor frame.
+    Point set_body_position_oCfF;       // Kinematically-set position of the body, FLOOR frame CENTROID origin. Default is DEFAULT_POSITION_oCfF
+    // Point Centroid              // Average of PLANTED feet. FLOOR frameFrame::BODY origin, but should convert to GROUND frame during use. 
+                                   // Body position is measured relative to the centroid (in the opposite direction).
+                                   // The centroid is 
+    // Experimental
+    Point world_centroid_position_oWfG; // Position of the body relative to startup position 
+
+// PARAMETERS
+    // From calibration data
+    Point COM_oBfB; // COM relative to default body origin. inFrame::BODY frame
+
+
+    // ============= COORDINATION =====================
+    // Foot Stance, Foot Note, Anchor Point, Centroid
+
+    // Information about a foot to help coordinate body movements
+    // anchor point (fFoC) + centroid (fFoB) = leg position (fFoB)
+    struct FootNote {
+    private:
+        FootStance stance;
+        Point anchor_point_oCfF; // FLOOR frameFrame::BODY origin. The position at which a foot touches the ground
+    
+    public:
+        FootNote() = default;
+
+        FootNote(Point new_anchor_point_oCfF) {
+            stance = FootStance::PLANTED;
+            anchor_point_oCfF = new_anchor_point_oCfF;
+        }
+
+        void setAnchorPoint(Point anchor) {
+            anchor_point_oCfF = anchor;
+        }
+
+        void switchStance(FootStance new_stance) {
+            if (new_stance == stance) {
+                return;
+            }
+
+            stance = new_stance;
+        }
+
+        Point getAnchorPoint_oCfF() {
+            if (stance == FootStance::LIFTED) {
+                return POINT_NULL;
+            }
+            return anchor_point_oCfF;
+        }
+
+        FootStance getStance() {
+            return stance;
+        }
+
+        bool isAnchored() {
+            return !(stance == FootStance::LIFTED);
+        }
+    };
+
+// ACCESSED
+    FootNote foot_note[NUM_LEGS]; // Coordination information about foot[i] is stored in foot_note[i]
+
+    /* 
+     * @return Calculates the centroid in the FLOOR frame, fromFrame::BODY.
+     * However, it is most useful to convert to GROUND frame before use.
+     *
+     * The centroid is the average of all PLANTED legs.
+     * Centroid must be calculated live each time it is used - most robust to changes
+     * in anchor points.
+     */
+    Point getCentroid_oBfF() {
+        // 1. average
+        int num_planted = 0;
+        Point centroid_oBfB = POINT_ZERO;
+        for (int i = 0; i < NUM_LEGS; i++) {
+            if (foot_note[i].getStance() == FootStance::PLANTED) {
+                centroid_oBfB += foot[i]->getPosition_oBfB();
+                num_planted++;                
+            }
+        }
+        
+        if (num_planted == 0) {
+            doError(2);
+            return POINT_ZERO;
+        } 
+
+        centroid_oBfB /= num_planted;
+        return centroid_oBfB / set_body_orientation_fF2B;
     }
 
+    // ============================Frame::BODY TRAJECTORY ================================
+    TrajectoryInfo<Point> body_position_trajectory_oCfF;
+    TrajectoryInfo<Rot> body_orientation_trajectory_fF2B;
+
+public:
+    // CRITICAL ASSUMPTION: dog starts up in zeroed frames, and all feet at default_height
+    // future: need way to auto-calculate all set states/ensure zeroed starting height
+    RobotDog() {
+        // Set up legs
+        foot[0] = &leg_ur;
+        foot[1] = &leg_br;
+        foot[2] = &leg_bl;
+        foot[3] = &leg_ul;
+
+
+        Point mounting_point;
+        Point starting_position = Point(0, 0, DEFAULT_LEG_HEIGHT);
+        Point foot_offset = Point(0, 13.97, 0);
+
+        mounting_point = Point( LENGTH2, -WIDTH2, 0);
+        leg_ur = DogLeg(&servo_driver,  0,  1,  2, mounting_point, mounting_point - starting_position + -foot_offset); // in future to enforce level starting, find way to set default_position.z = default_height conveniently.
+        leg_ur.flipLR();
+        leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
+        leg_ur.calibrateServos(LEG_UR_C_ANG_OFS, LEG_UR_S_ANG_OFS, LEG_UR_E_ANG_OFS);
+        leg_ur.setID(0);
+
+        mounting_point = Point(-LENGTH2, -WIDTH2, 0);
+        leg_br = DogLeg(&servo_driver,  4,  5,  6, mounting_point, mounting_point - starting_position + -foot_offset);
+        leg_br.flipLR();
+        leg_br.flipFB();
+        leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
+        leg_br.calibrateServos(LEG_BR_C_ANG_OFS, LEG_BR_S_ANG_OFS, LEG_BR_E_ANG_OFS);
+        leg_br.setID(1);
+
+        mounting_point = Point(-LENGTH2, WIDTH2, 0);
+        leg_bl = DogLeg(&servo_driver,  8,  9, 10, mounting_point, mounting_point - starting_position + foot_offset);
+        // leg_bl.flipLR();
+        leg_bl.flipFB();
+        leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
+        leg_bl.calibrateServos(LEG_BL_C_ANG_OFS, LEG_BL_S_ANG_OFS, LEG_BL_E_ANG_OFS);
+        leg_bl.setID(2);
+
+        mounting_point = Point( LENGTH2, WIDTH2, 0);
+        leg_ul = DogLeg(&servo_driver, 12, 13, 14, mounting_point, mounting_point - starting_position + foot_offset);
+        // leg_ul.flipLR();
+        leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
+        leg_ul.calibrateServos(LEG_UL_C_ANG_OFS, LEG_UL_S_ANG_OFS, LEG_UL_E_ANG_OFS);
+        leg_ul.setID(3);
+
+
+// PARAMETERS
+        // COM = Point(3, 0, 9.5);
+        COM_oBfB = Point(0,0,0);
+
+// ACCESSED info
+        meas_body_orientation_fG2B = ROT_ZERO;   // Dog will start at level height
+        set_body_orientation_fF2B = ROT_ZERO;    // Feet default startup will be at normal orientation
+        set_body_position_oCfF = starting_position;      // Body will start up at default height 
+
+        world_centroid_position_oWfG = POINT_ZERO;
+
+        // Coordination Setup
+        for (int i = 0; i < NUM_LEGS; i++) {
+            foot_note[i].setAnchorPoint(foot[i]->getDefaultPosition_oBfB() + set_body_position_oCfF);
+        }
+    }
+
+    // Startup items to be fulfilled after constructer is called. This must be called to function correctly
+    // Sends signals to all legs to go to default heights
     void begin() {
         servo_driver.defaultStartup();
 
-        if (use_imu) {
-            bno_imu.setCollectionMode(IMU::CONTINUOUS);
-            bno_imu.defaultStartup();
+    #ifndef DEBUG_COMPUTATION
+        bno_imu.setCollectionMode(IMU::SINGLE);
+        bno_imu.defaultStartup();
+    #endif
+
+        for (int i = 0; i < NUM_LEGS; i++) {
+            foot[i]->moveToPositionFromBody(foot[i]->getDefaultPosition_oBfB());
+            foot[i]->operate();
         }
 
+        leg_update_timer.usePrecision();
         leg_update_timer.reset(LEG_UPDATE_PERIOD);
-        imu_update_timer.reset(IMU_UPDATE_PERIOD);
+        //imu_update_timer.reset(IMU_UPDATE_PERIOD);
     }
 
     void tareIMU() {
         bno_imu.tareOrientation();
     }
 
-    void useIMU(bool to_use) {
-        use_imu = to_use;
-    }
-
-    // "heights" are relative to body origin
-    void gotoLegHeights(float h1, float h2, float h3, float h4) {
-        leg[0]->setToPositionFromShoulder(Point(0, 0, h1), Frame::BODY);
-        leg[1]->setToPositionFromShoulder(Point(0, 0, h2), Frame::BODY);
-        leg[2]->setToPositionFromShoulder(Point(0, 0, h3), Frame::BODY);
-        leg[3]->setToPositionFromShoulder(Point(0, 0, h4), Frame::BODY);
-        operateAllLegs();
-        sendAllSignals();          
-    }
-
-
-
-    // Kinematically moves dog body to a new orientation/position relative to current pose.
-    // New orientation may not be exactly equivalent to measured orientation.
-    // Only ANCHORED/FIXED legs get moved.
-    // Implementation: 
-    // @param d_orientation:      Change in body orientation
-    // @param d_position:         Change in body position, in requested frame
-    // @param frame:              Reference frame in which dp is given. If BODY is chosen, movement based on *DESIRED* body orientation.
-    // @param time:               Total movement time desired to move the foot from its current position to the new position.
-    //                            Set to 0/TIME_INSTANT for max speed.
-    void setFromPosition(Rot dr, Point dp, Frame frame, float time=TIME_INSTANT) {
-        Rot r = body_orientation + dr; // Desired orientation
-        desired_orientation = r;
-        // Convert everything to GROUND frame
-        if (frame == Frame::BODY) {
-            dp /= r;
+// ================
+// ==== HELPER =====
+// =================
+    Point convertToFrame(Point p, Frame frame_from, Frame frame_to) {
+        if (frame_from == frame_to) {
+            return p;
         }
-
-        // Calculates new positions
-        Point new_leg_position_oBfG;
-        for (int i = 0; i < NUM_LEGS; i++) {
-            if (leg[i]->isAnchored()) {
-                new_leg_position_oBfG = leg[i]->getCurrentFootPositionFromBody(Frame::GROUND) * r; // Rotate body to the desired orientation
-                new_leg_position_oBfG -= dp; // Translate the body accordingly
-                leg[i]->setToPositionFromBody(new_leg_position_oBfG, Frame::GROUND, time);
-            }
-        }
-    }
-
-    // Coordinates based on centroid of anchored feet
-    // Centroid is the centroid of the polygon created by the ANCHORED feet, at the default height
-    // Kinematically moves dog body to a new orientation/position relative to current pose.
-    // New orientation may not be exactly equivalent to measured orientation.
-    // Only ANCHORED/FIXED legs get moved.
-    // Implementation: 
-    // @param r:                  Desired body orientation
-    // @param p_oC:               Desired body position, relative to centroid
-    // @param frame:              Reference frame in which dp is given. If BODY is chosen, movement based on *DESIRED* body orientation.
-    // @param time:               Total movement time desired to move the foot from its current position to the new position.
-    //                            Set to 0/TIME_INSTANT for max speed.
-    void setFromCentroid(Rot r, Point p_oCf, Frame frame, float time=TIME_INSTANT) {
-        // Calculate distance to move, in GROUND frame
-        Point dp_fB;
-        updateCentroid();
-
-        if (frame == Frame::GROUND) {
-            dp_fB = (p_oCf + centroid_oBfG) * r;
-        } else { // BODY frame
-            dp_fB = p_oCf + centroid_oBfG * r;
-        }
-
-        desired_orientation = r;
-
-        // Calculates new positions
-        Point new_leg_position_oBfB;
-        for (int i = 0; i < NUM_LEGS; i++) {
-            if (leg[i]->isAnchored()) {
-                // Serial.print("Original (b): "); (leg[i]->getCurrentFootPositionFromBody(Frame::BODY)).print();
-                // Serial.print("Original (g): "); (leg[i]->getCurrentFootPositionFromBody(Frame::GROUND)).print();
-                new_leg_position_oBfB = leg[i]->getCurrentFootPositionFromBody(Frame::GROUND) * r; // Rotates to desired orientation
-                new_leg_position_oBfB -= dp_fB; // Translate body accordingly
-                // Serial.print("Goal (b): "); new_leg_position_oBfB.print();
-                // Serial.print("Goal (g): "); (new_leg_position_oBfB / r).print();
-                leg[i]->setToPositionFromBody(new_leg_position_oBfB, Frame::BODY, time);
-            }
-        }
-        // Serial.println();
-    }
-
-    // Centroid relative to BODY origin, in GROUND frame, based on foot positions
-    // z height is default leg heigh
-    void updateCentroid() {
-        int num_anchored = 0;
-        float lowest_leg_height = 0;
-        Point centroid = POINT_ZERO;
-        for (int i = 0; i < NUM_LEGS; i++) {
-            if (leg[i]->isAnchored()) {
-                Point leg_pos_oBfG = leg[i]->getCurrentFootPositionFromBody(Frame::GROUND);
-                centroid += leg_pos_oBfG; // get x, y of centroid
-                if (leg_pos_oBfG.z < lowest_leg_height)
-                    lowest_leg_height = leg_pos_oBfG.z;
-                num_anchored++;                
-            }
-        }
-        
-        if (num_anchored == 0) {
-            doError(2);
-            return;
+        // Convert appropriately
+        if        ((frame_from == Frame::GROUND) && (frame_to == Frame::BODY)) {
+            return p / meas_body_orientation_fG2B;
+        } else if ((frame_from == Frame::BODY) && (frame_to == Frame::GROUND)) {
+            return p * meas_body_orientation_fG2B;
+        } else if ((frame_from == Frame::FLOOR) && (frame_to == Frame::BODY)) {
+            return p / set_body_orientation_fF2B;
+        } else if ((frame_from == Frame::BODY) && (frame_to == Frame::FLOOR)) {
+            return p * set_body_orientation_fF2B;
+        } else if ((frame_from == Frame::GROUND) && (frame_to == Frame::FLOOR)) {
+            return (p / (meas_body_orientation_fG2B) * set_body_orientation_fF2B);
+        } else { // ((frame_from == FLOOR) && (frame_to == GROUND)) {
+            return (p / (set_body_orientation_fF2B)) * meas_body_orientation_fG2B;
         } 
-
-        centroid /= num_anchored;
-        centroid.z = lowest_leg_height; // Calculate actual centroid
-        
-        centroid_oBfG = centroid;
+    }
+// ========================================
+// ====== STATE ACCESSORS =================
+// ========================================
+    Point getFootPositionFromBody(int foot_i, Frame frame) {
+        return convertToFrame(foot[foot_i]->getPosition_oBfB(), Frame::BODY, frame);
     }
 
-    Point getCentroid() {
-        updateCentroid();
-        return centroid_oBfG;
+    Point getBodyPositionFromCentroid(Frame frame) {
+        return convertToFrame(set_body_position_oCfF, Frame::FLOOR, frame);
+    }
+
+    Rot getBodyIMUOrientation_fG2B() {
+        return meas_body_orientation_fG2B;
+    }
+
+    Rot getBodyKinematicOrientation_fF2B() {
+        return set_body_orientation_fF2B;
+    }
+
+    float getStartingHeight() {
+        return DEFAULT_LEG_HEIGHT;
+    }
+
+    Point getDefaultFootPosition(int foot_i, Frame frame) {
+        return convertToFrame(foot[foot_i]->getDefaultPosition_oBfB(), Frame::BODY, frame);
+    }
+
+// ======================================
+// ========= COORDINATION ACCESSORS =====
+// ======================================
+    Point getAnchorPoint_oC(int foot_i, Frame frame=Frame::FLOOR) {
+        if (foot_note[foot_i].isAnchored()) {
+            return convertToFrame(foot_note[foot_i].getAnchorPoint_oCfF(), Frame::FLOOR, frame);
+        } else {
+            return POINT_NULL;
+        }
+    }
+
+    FootStance getFootStance(int foot_i) {
+        return foot_note[foot_i].getStance();
+    }
+
+
+
+
+// ========================================
+// ====== MAIN MOTION COMMANDS/ACCESSORS ============
+// ========================================
+// Commands
+    // Orientation Only
+    // moves body relative to floor frame. to move relative to ground frame, manually calculate beforehand
+    void moveBodyToOrientation(Rot goal_orientation, float time=TIME_INSTANT) {
+        body_orientation_trajectory_fF2B.begin(goal_orientation, time);
+    }
+
+    // Position Only
+    void moveBodyToPositionFromCentroid(Point goal_position, Frame frame, float time=TIME_INSTANT) {
+        body_position_trajectory_oCfF.begin(convertToFrame(goal_position, frame, Frame::FLOOR), time);
+    }
+
+    // Do both at the same time
+    void moveBodyToPose(Rot goal_orientation, Point goal_position, Frame frame, float time=TIME_INSTANT) {
+        body_orientation_trajectory_fF2B.begin(goal_orientation, time);
+        body_position_trajectory_oCfF.begin(convertToFrame(goal_position, frame, Frame::FLOOR), time);
+    }
+    
+    void moveFootToPositionFromBody(int foot_i, Point position, Frame frame, float time=TIME_INSTANT) {
+        if (foot_note[foot_i].getStance() != FootStance::LIFTED) {
+            switchFootStance(foot_i, FootStance::LIFTED);
+        }
+        // set up the trajectory
+        foot[foot_i]->moveToPositionFromBody(convertToFrame(position, frame, Frame::BODY), time);
+    }
+
+// Accessors
+
+
+// SPECIAL MOTION COMMANDS
+
+    void adjustLegMotionGoal(int foot_i, Point new_foot_pos) {
+        foot[foot_i]->adjustLegMotionGoal(new_foot_pos);
+    }
+
+    void adjustLegMotionTime(int foot_i, float time) {
+        foot[foot_i]->adjustLegMotionTime(time);
+    }
+
+    void adjustBodyPositionMotionTime(float time) {
+        body_position_trajectory_oCfF.adjustFinalTime(time);
+    }
+
+    void adjustBodyOrientationMotionTime(float time) {
+        body_orientation_trajectory_fF2B.adjustFinalTime(time);
     }
 
     // Move to original positions and anchors
-    void gotoDefaultStance() {
+    void resetDefaultStance() {
+        Point starting_position = Point(0, 0, DEFAULT_LEG_HEIGHT);
         for (int i = 0; i < NUM_LEGS; i++) {
-            leg[i]->setToPositionFromShoulder(Point(0, 0, -DEFAULT_LEG_HEIGHT));
-            leg[i]->setState(CoordinationState::ANCHORED);
+            foot[i]->moveToDefaultPosition();
+            foot[i]->operate();
         }
-        operateAllLegs();
-        sendAllSignals();
+
+        meas_body_orientation_fG2B = ROT_ZERO;   // Dog will start at level height
+        set_body_orientation_fF2B = ROT_ZERO;    // Feet default startup will be at normal orientation
+        set_body_position_oCfF = starting_position;      // Body will start up at default height 
+
+        world_centroid_position_oWfG = POINT_ZERO;
+
+        // Coordination Setup
+        for (int i = 0; i < NUM_LEGS; i++) {
+            foot_note[i].setAnchorPoint(foot[i]->getDefaultPosition_oBfB() + set_body_position_oCfF);
+        }
     }
 
-
-    void sendAllSignals() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            leg[i]->sendSignals();
-        }
+    void cancelTrajectory() {
+        // cancels all body-based motion
     }
 
+    void stopMotion() {
+        // cancels all motion whatsoever
+    }
+// Accessors
+
+
+
+// ===============================
+// ==== HELPFUL MOTION COMMANDS ====
+// ===============================
+    // cases
+    /*
+     * lift <-> plant: centroid, all anchor
+     * lift <-> set: anchor
+     * plant <-> set: centroid, all anchor
+     */
+    void switchFootStance(int foot_i, FootStance new_stance) {
+        FootStance old_stance = foot_note[foot_i].getStance();
+
+        if (old_stance == new_stance) {
+            return;
+        }
+
+        if (new_stance == FootStance::LIFTED) {
+            // set->lift or plant->lift
+            // Nullify the anchor point
+            foot_note[foot_i].setAnchorPoint(POINT_NULL);
+        }
+        if  ((old_stance == FootStance::PLANTED) || (new_stance == FootStance::PLANTED)) {
+            //Point old_centroid = getCentroid_oBfF();
+            foot_note[foot_i].switchStance(new_stance);
+            Point centroid = getCentroid_oBfF();
+            set_body_position_oCfF = -centroid;
+            
+            for (int i = 0; i < NUM_LEGS; i++) {
+                if (foot_note[i].isAnchored())
+                    foot_note[i].setAnchorPoint(foot[i]->getPosition_oBfB() * set_body_orientation_fF2B + set_body_position_oCfF);
+            }
+
+            //Point centroid_motion_fF = centroid - old_centroid;
+            //world_centroid_position_oWfG += convertToFrame(centroid_motion_fF, Frame::FLOOR, Frame::GROUND);
+        } else if  (old_stance == FootStance::LIFTED) {
+            // lift->set or lift->plant
+            foot_note[foot_i].setAnchorPoint(foot[foot_i]->getPosition_oBfB() * set_body_orientation_fF2B + set_body_position_oCfF);
+        }
+        foot_note[foot_i].switchStance(new_stance);
+    }
+
+// ===============================
+// ==== OPERATIONAL COMMANDS ====
+// ===============================
     void operate() {
-        if (use_imu) {
-            // Update the IMU and centroid
-            if (imu_update_timer.timeOut()) {
-                bno_imu.operate();
-                imu_update_timer.reset();
+        // Measurements
+        #ifndef DEBUG_COMPUTATION // If want to manually feed in orientation data
+        bno_imu.operate();
+        meas_body_orientation_fG2B = bno_imu.getOrientation();
+        #endif
 
-                body_orientation = bno_imu.getOrientation();
-
-                // if (fixedLegPresent()) {
-                    updateCentroid();
-                // }
-            }
-        } else { // No IMU has not been fully tested, especially when walking 
-            if (imu_update_timer.timeOut()) {
-                if (isIdle()) {
-                    body_orientation = desired_orientation;
-                }
-                imu_update_timer.reset();
-            }
-        }
-
-        // Update the legs
-        bool leg_success = true;
         if (leg_update_timer.timeOut()) {
-            // Updates each leg
-            for (int i = 0; i < NUM_LEGS; i++) {
-                if(!(leg[i]->operate())) {
-                    leg_success = false;
-                    //doError(1);
-                    break;
-                }
-            }
-            // Sends signals
-            if (leg_success) { sendAllSignals(); }
             leg_update_timer.reset();
-        }
-    }
+            bool anchored_leg_motion_feasible = true;
+            // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // ~~~~ Solves body motion (for anchored legs) ~~~~
+            if (body_position_trajectory_oCfF.isActive() || body_orientation_trajectory_fF2B.isActive()) {
+                // Updates the next pose on the trajectory
+                Point next_body_position_oCfF = body_position_trajectory_oCfF.getNextState(set_body_position_oCfF);
+                Rot next_body_orientation_fF2B = body_orientation_trajectory_fF2B.getNextState(set_body_orientation_fF2B);
 
-    // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // ======== Walking =====================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~   
-    struct TrottingInfo {
-        // Defaults
-        Rot *body_orientation;
-        Point default_leg_position[4];
-        Point default_height;
-        Point raise_height;
-        Point push_height;
+                // then solves IKIN for all anchored legs
+                for (int i = 0; i < NUM_LEGS; i++) {
+                    if (foot_note[i].isAnchored()) {
+                        foot[i]->moveToPositionFromBody((foot_note[i].getAnchorPoint_oCfF() - next_body_position_oCfF) / next_body_orientation_fF2B, TIME_INSTANT); // TODO: Check that this conversion is correct
+                    }
+                }
 
-        // Movement Request
-        float *dx; // These are pointers. They are updated externally and read via getRequested___()
-        float *dy;
-        float *dyaw;
-        Frame frame; // Frame that the movement request was provided in
+                // Do kinematic checks and sends the signals
+                // First checks if anchored legs motions are possible
+                for (int i = 0; i < NUM_LEGS; i++) {
+                    if (foot_note[i].isAnchored()) {
+                        foot[i]->solveMotion();
+                        if(!(foot[i]->kinematicsIsValid())) { // Failure detected
+                            anchored_leg_motion_feasible = false;
+                            break;
+                        }
+                    }
+                }
 
-        // State
-        int state;
-        Timer timer;
-        bool begin_state;
-        bool leg_is_swinging[4];
-
-        TrottingInfo() {}
-
-        TrottingInfo(float *x, float *y, float *yaw, Rot *body_orientation_ref) {
-            default_leg_position[0] = Point( LENGTH2,  WIDTH2, 0); // All these need to be variablized
-            default_leg_position[1] = Point(-LENGTH2,  WIDTH2, 0);
-            default_leg_position[2] = Point(-LENGTH2, -WIDTH2, 0);
-            default_leg_position[3] = Point( LENGTH2, -WIDTH2, 0);
-
-            leg_is_swinging[0] = false;
-            leg_is_swinging[1] = true;
-            leg_is_swinging[2] = false;
-            leg_is_swinging[3] = true;
-
-            dy = y;
-            dx = x;
-            dyaw = yaw;
-            body_orientation = body_orientation_ref;
-
-            default_height = Point(0, 0, 110);
-            raise_height = Point(0, 0, 35);
-            push_height = Point(0, 0, 15);
-
-            frame = Frame::BODY;
-            state = 0;
-            begin_state = true;
-        }
-
-        Rot getBodyYaw() {
-            return Rot(0, 0, body_orientation->z);
-        }
-
-        // Return Desired position in ground frame
-        Point getRequestedLegPosition(int i) {
-            Rot r = getRequestedRot() + getBodyYaw();
-            Point dp = getRequestedTrans();
-            if (frame == Frame::BODY) {
-                dp /= r;
+                // If so, saves values
+                if (anchored_leg_motion_feasible) {
+                    set_body_orientation_fF2B = next_body_orientation_fF2B;
+                    set_body_position_oCfF = next_body_position_oCfF;
+                } else { // Otherwise, cancels the body trajectories
+                    body_orientation_trajectory_fF2B.end();
+                    body_position_trajectory_oCfF.end();
+                    // // Feet should not have trajectories, but adds redundancy
+                    // for (int i = 0; i < NUM_LEGS; i++) {
+                    //     if (foot_note[i].isAnchored()) {
+                    //         foot[i]->endTrajectory();
+                    //     } 
+                    // }
+                }
             }
-            return default_leg_position[i] / r + dp;
-        }
 
-        // Return basic position. in current heading
-        Point getDefaultLegPosition(int i) {
-            return default_leg_position[i] / getBodyYaw();
-        }
 
-        // Amount to rotate by
-        Rot getRequestedRot() {
-            return Rot(0, 0, *dyaw);
-        }
 
-        Point getRequestedTrans() {
-            return Point(*dx, *dy, 0);
-        }
-
-        bool legIsSwinging(int i) {
-            return leg_is_swinging[i];
-        }
-
-        void switchPhase() {
+            // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // ~~~~ Solves individual leg motion (for lifted legs) ~~~~
             for (int i = 0; i < NUM_LEGS; i++) {
-                leg_is_swinging[i] = !leg_is_swinging[i];
-            }
-        }
-    };
-
-    // Trotting
-    TrottingInfo trot_info;
-
-    // Register Request pointers
-    void beginTrot(float *x, float *y, float *yaw) {
-        trot_info = TrottingInfo(x, y, yaw, &body_orientation);
-        trot_info.timer.reset();
-    }
-
-    // Register frame in which requests are made
-    void setTrotFrame(Frame frame) {
-        trot_info.frame = frame;
-    }
-
-    // Algorithm 2 - 2 states
-    void trot() {
-        Rot desired_orientation = body_orientation*0.5;
-        desired_orientation.z = body_orientation.z;
-        //Serial.print("desired orient: "); desired_orientation.print();
-
-        switch (trot_info.state) {
-            case 0: {// Kick legs out, push body forward; maintain balance
-                if (trot_info.begin_state) {
-
-                    // Serial.println("State 1: Kick Leg");
-                    int period = 400;
-
-                    // Kick 2 feet out
-                    for (int i = 0; i < NUM_LEGS; i++) {
-                        if (trot_info.legIsSwinging(i)) {
-                            leg[i]->setState(CoordinationState::FIXED);
-                            leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i) + trot_info.raise_height, 
-                                                              Frame::GROUND, period*0.99);
-                        } else {
-                            leg[i]->setState(CoordinationState::ANCHORED);
-                        }
-                    }
-                    // Push Body Forward and up
-                    setFromCentroid(desired_orientation + trot_info.getRequestedRot()/2, 
-                                    trot_info.default_height + trot_info.getRequestedTrans(),// + trot_info.push_height, 
-                                    Frame::GROUND, period * 0.99);
-                    
-                    trot_info.timer.reset(period);
-                    trot_info.begin_state = false;
-                    break;
-                }
-               // maintain balance
-
-                // Finished. Switch state.
-                if (trot_info.timer.timeOut()) {
-                    trot_info.state = 1;
-                    trot_info.begin_state = true;
-                } else {
-                    break;
+                if ((foot_note[i].getStance() == FootStance::LIFTED)) {
+                    foot[i]->solveMotion();
                 }
             }
-            case 1: {// Setting feet down
-                if (trot_info.begin_state) {
-                    // Serial.println("State 2: Return Leg");
-                    int period = 400;
 
-                    // Place feet on floor
-                    for (int i = 0; i < NUM_LEGS; i++) {
-                        if (trot_info.legIsSwinging(i)) {
-
-                            leg[i]->setState(CoordinationState::FIXED);
-                            leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i), 
-                                                              Frame::GROUND, period * 0.99);
-                            // leg[i]->setState(CoordinationState::FLOATING);
-                            // leg[i]->setToPositionFromBody(trot_info.getRequestedLegPosition(i) - trot_info.default_height, 
-                            //                               Frame::GROUND, period*0.99);
-                        }
+            // ~~~~~~~~~~~~~~~~~~
+            // ~~ Send the signals ~~~
+            for (int i = 0; i < NUM_LEGS; i++) {
+                if (foot_note[i].isAnchored() && (body_position_trajectory_oCfF.isActive() || body_orientation_trajectory_fF2B.isActive())) {
+                    if (anchored_leg_motion_feasible)
+                        foot[i]->sendSignals();
+                } else { // foot is lifted
+                    if (foot[i]->kinematicsIsValid()) {
+                        foot[i]->sendSignals();
+                    } else {
+                        foot[i]->endTrajectory();
                     }
-                    // Continue Pushing Body
-                    setFromCentroid(desired_orientation + trot_info.getRequestedRot(), 
-                                    trot_info.default_height + trot_info.getRequestedTrans(), 
-                                    Frame::GROUND, period * 0.99); // move dog body up a bit
-                    
-                    trot_info.timer.reset(period);
-                    trot_info.begin_state = false;
-                    break;
-                }
-
-                // Check if legs have hit the ground. Also maintain balance.
-                bool legs_hit_ground = false;
-                for (int i = 0; i < NUM_LEGS; i++) {
-                    if (trot_info.legIsSwinging(i)) {
-                        if ((leg[i]->getCurrentFootPositionFromCentroid(Frame::GROUND)).z < 1.5)
-                            legs_hit_ground = true;
-                    }
-                }
-
-
-                // Legs have completed trajectory. Switch to other legs
-                if (trot_info.timer.timeOut() || legs_hit_ground) {
-                    trot_info.state = 0;
-                    trot_info.begin_state = true;
-                    trot_info.switchPhase();
-                } else {
-                    break;
-                }
+                } 
             }
         }
 
-        operate();Serial.println("");
+
     }
-
-
-
-/*
-    void trot() {
-        Rot desired_orientation = body_orientation*0.9;
-        desired_orientation.z = body_orientation.z;
-        //Serial.print("desired orient: "); desired_orientation.print();
-
-        switch (trot_info.state) {
-            case 0: {// Pull body to center, Raise legs up
-                if (trot_info.begin_state) {
-                    // Serial.println("State 0: Raise Leg");
-                    int period = 70;
-                    // Raise 2 feet up
-                    for (int i = 0; i < NUM_LEGS; i++) {
-                        if (trot_info.legIsSwinging(i)) {
-                            leg[i]->setState(CoordinationState::FIXED);
-                            leg[i]->setToPositionFromCentroid(trot_info.getDefaultLegPosition(i) + trot_info.raise_height, 
-                                                              Frame::GROUND, period*0.99);
-                        } else {
-                            leg[i]->setState(CoordinationState::ANCHORED);
-                        }
-                    }
-                    // Pull body
-                    setFromCentroid(desired_orientation, 
-                                    trot_info.default_height, 
-                                    Frame::GROUND, period * 0.99); // move dog body up a bit
-                    
-                    trot_info.timer.reset(period);
-                    trot_info.begin_state = false;
-                    break;
-                }
-                // Maintain Balance...not ready yet
-
-                // Finished. Switch state.
-                if (trot_info.timer.timeOut()) {
-                    trot_info.state = 1;
-                    trot_info.begin_state = true;
-                } else {
-                    break;
-                }
-            }
-            case 1: {// Kick legs out, push body forward; maintain balance
-                if (trot_info.begin_state) {
-                    // Serial.println("State 1: Kick Leg");
-                    int period = 70;
-
-                    // Kick 2 feet out
-                    for (int i = 0; i < NUM_LEGS; i++) {
-                        if (trot_info.legIsSwinging(i)) {
-                            // leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i) + trot_info.raise_height, 
-                            //                                   Frame::GROUND, period * 0.99);
-                            leg[i]->setState(CoordinationState::FLOATING);
-                            leg[i]->setToPositionFromBody(trot_info.getRequestedLegPosition(i) - trot_info.default_height + trot_info.raise_height, 
-                                                          Frame::GROUND, period*0.99);
-                        }
-                    }
-                    // Push Body Forward and up
-                    setFromCentroid(desired_orientation+ trot_info.getRequestedRot(), 
-                                    trot_info.default_height + trot_info.push_height, 
-                                    Frame::GROUND, period * 0.99);
-                    
-                    trot_info.timer.reset(period);
-                    trot_info.begin_state = false;
-                    break;
-                }
-               // maintain balance
-
-                // Finished. Switch state.
-                if (trot_info.timer.timeOut()) {
-                    trot_info.state = 2;
-                    trot_info.begin_state = true;
-                } else {
-                    break;
-                }
-            }
-            case 2: {// Setting feet down
-                if (trot_info.begin_state) {
-                    // Serial.println("State 2: Return Leg");
-                    int period = 140;
-
-                    // Place feet on floor
-                    for (int i = 0; i < NUM_LEGS; i++) {
-                        if (trot_info.legIsSwinging(i)) {
-
-                            leg[i]->setState(CoordinationState::FIXED);
-                            leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i), 
-                                                              Frame::GROUND, period * 0.99);
-                            // leg[i]->setState(CoordinationState::FLOATING);
-                            // leg[i]->setToPositionFromBody(trot_info.getRequestedLegPosition(i) - trot_info.default_height, 
-                            //                               Frame::GROUND, period*0.99);
-                        }
-                    }
-                    // Continue Pushing Body
-                    setFromCentroid(desired_orientation + trot_info.getRequestedRot(), 
-                                    trot_info.default_height + trot_info.getRequestedTrans(), 
-                                    Frame::GROUND, period * 0.99); // move dog body up a bit
-                    
-                    trot_info.timer.reset(period);
-                    trot_info.begin_state = false;
-                    break;
-                }
-
-                // Check if legs have hit the ground. Also maintain balance.
-                bool legs_hit_ground = false;
-                for (int i = 0; i < NUM_LEGS; i++) {
-                    if (trot_info.legIsSwinging(i)) {
-                        if ((leg[i]->getCurrentFootPositionFromCentroid(Frame::GROUND)).z < 1.5)
-                            legs_hit_ground = true;
-                    }
-                }
-
-
-                // Legs have completed trajectory. Switch to other legs
-                if (trot_info.timer.timeOut() || legs_hit_ground) {
-                    trot_info.state = 0;
-                    trot_info.begin_state = true;
-                    trot_info.switchPhase();
-                } else {
-                    break;
-                }
-            }
-            // case 3: {// Setting feet down
-            //     if (trot_info.begin_state) {
-            //         // Serial.println("State 3: Reanchor");
-            //         int period = (40);
-
-            //         // Place feet on floor
-            //         for (int i = 0; i < NUM_LEGS; i++) {
-            //             leg[i]->setState(CoordinationState::ANCHORED);
-            //         }
-            //         // Set Body Down
-            //         Rot desired_orientation = body_orientation * (0.7);
-            //         desired_orientation.z = body_orientation.z;
-            //         setFromCentroid(desired_orientation,  
-            //                         trot_info.default_height, 
-            //                         Frame::GROUND, period * 0.99);
-            //         trot_info.timer.reset(period);
-            //         trot_info.begin_state = false;
-            //         break;
-            //     }
-
-            //     // Legs have completed trajectory. Switch to other legs
-            //     if (trot_info.timer.timeOut()) {
-            //         trot_info.state = 0;
-            //         trot_info.begin_state = true;
-            //     } else {
-            //         break;
-            //     }
-            // }
-        }
-
-        operate();
-    }
-*/
-    bool fixedLegPresent() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            if (leg[i]->isFixed()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-
-    void operateAllLegs() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            leg[i]->operate();
-        }
-    }
-
-    bool isIdle() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            if (!(leg[i]->isIdle()))
-                return false;
-        }
-        return true;
-    }
-
-
 
 // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// ======== DEBUGGINH =====================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~    
-    // Forces a new orientation to be set...mostly for debugging
-    void setOrientation(Rot new_orientation) {
-        body_orientation = new_orientation;
-    }
-
+// ======== DEBUGGING =====================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~   
+public:
     void doError(int e) {
+        #ifdef DEBUG
         Serial.print("Dog ERROR: ");
         switch (e) {
             case 1: Serial.println("Leg IKIN invalid."); break;
-            case 2: Serial.println("No Anchored Points."); break;
+            case 2: Serial.println("No PLANTED Points."); break;
+            case 3: Serial.println("Some FootNote Error"); break;
         } 
+        #endif
     }
 
-    void printIMU() {
-        Serial.print("IMU: "); (bno_imu.getOrientation()).print();
-    }
-
-    void printLegs() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            Point foot_pos_G = leg[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
-            Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
-        }
-    }
-
-    void printLegsFromBody() {
-        for (int i = 0; i < NUM_LEGS; i++) {
-            Point foot_pos_G = leg[i]->getCurrentFootPositionFromBody(Frame::GROUND);
-            Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
-        }
-    }
-
-    void printLeg(int i) {
-        Point foot_pos_G = leg[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
-        Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
-    }
-
-    void printCentroid() {
-        Serial.print("Centoid (oBfG): "); centroid_oBfG.print();
-    }
-
+#ifdef DEBUG
     DogLeg *getLeg(int i) {
-        return leg[i];
+        return foot[i];
     }
 
     RServoDriver *getServoDriver() {
         return &servo_driver;
     }
+
+
+#endif
+
+#ifdef DEBUG_COMPUTATION
+    // Manually feed in orientation values
+    void feedIMU(Rot orientation) {
+        meas_body_orientation_fG2B = orientation;
+    }
+    // bool fixedLegPresent() {
+    //     for (int i = 0; i < NUM_LEGS; i++) {
+    //         if (foot[i]->isFixed()) {
+    //             return true;
+    //         }
+    //     }
+    //     return false;
+    // }
+
+    // bool isIdle() {
+    //     for (int i = 0; i < NUM_LEGS; i++) {
+    //         if (!(foot[i]->isIdle()))
+    //             return false;
+    //     }
+    //     return true;
+    // }
+
+
+    //     // "heights" are relative to body origin
+    // void gotoLegHeights(float h1, float h2, float h3, float h4) {
+    //     foot[0]->setToPositionFromShoulder(Point(0, 0, h1));
+    //     foot[1]->setToPositionFromShoulder(Point(0, 0, h2));
+    //     foot[2]->setToPositionFromShoulder(Point(0, 0, h3));
+    //     foot[3]->setToPositionFromShoulder(Point(0, 0, h4));
+    //     operateAllLegs();
+    //     sendAllSignals();          
+    // }
+
+
+    // void sendAllSignals() {
+    //     for (int i = 0; i < NUM_LEGS; i++) {
+    //         foot[i]->sendSignals();
+    //     }
+    // }
+
+
+
+    // void printIMU() {
+    //     Serial.print("IMU: "); (bno_imu.getOrientation()).print();
+    // }
+
+    // void printLegs() {
+    //     for (int i = 0; i < NUM_LEGS; i++) {
+    //         Point foot_pos_G = foot[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
+    //         Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
+    //     }
+    // }
+
+    // void printLegsFromBody() {
+    //     for (int i = 0; i < NUM_LEGS; i++) {
+    //         Point foot_pos_G = foot[i]->getCurrentFootPositionFromBody(Frame::GROUND);
+    //         Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
+    //     }
+    // }
+
+    // void printLeg(int i) {
+    //     Point foot_pos_G = foot[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
+    //     Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
+    // }
+
+    // void printCentroid() {
+    //     Serial.print("Centoid (oBfG): "); centroid_oBfG.print();
+    // }
+
+
+#endif
 };
 
 
 #endif
 
-   // Height in the ground frame
-    // float getCurrentHeight() {
-    //     int num_anchored = 0;
-    //     Point centroid = POINT_ZERO;
+
+    // // Coordinates based on centroid of PLANTED feet
+    // // Centroid is the centroid of the polygon created by the PLANTED feet, at the default height
+    // // Kinematically moves dog body to a new orientation/position relative to current pose.
+    // // New orientation may not be exactly equivalent to measured orientation.
+    // // Only PLANTED/FIXED legs get moved.
+    // // Implementation: 
+    // // @param r:                  Desired body orientation
+    // // @param p_oC:               Desired body position, relative to centroid
+    // // @param frame:              Reference frame in which dp is given. IfFrame::BODY is chosen, movement based on *DESIRED* body orientation.
+    // // @param time:               Total movement time desired to move the foot from its current position to the new position.
+    // //                            Set to 0/TIME_INSTANT for max speed.
+    // void setFromCentroid(Rot r, Point p_oCf, Frame frame, float time=TIME_INSTANT) {
+    //     // Calculate distance to move, in GROUND frame
+    //     Point dp_fB;
+
+    //     if (frame == Frame::GROUND) {
+    //         dp_fB = (p_oCf + centroid_oBfG) * r;
+    //     } else { //Frame::BODY frame
+    //         dp_fB = p_oCf + centroid_oBfG * r;
+    //     }
+
+    //     desired_orientation = r;
+
+    //     // Calculates new positions
+    //     Point new_leg_position_oBfB;
     //     for (int i = 0; i < NUM_LEGS; i++) {
-    //         centroid += leg[i]->getCurrentFootPositionFromBody(Frame::GROUND);
-    //         num_anchored++;
+    //         if (foot[i]->isPLANTED()) {
+    //             // Serial.print("Original (b): "); (foot[i]->getCurrentFootPositionFromBody(Frame::BODY)).print();
+    //             // Serial.print("Original (g): "); (foot[i]->getCurrentFootPositionFromBody(Frame::GROUND)).print();
+    //             new_leg_position_oBfB = foot[i]->getCurrentFootPositionFromBody(Frame::GROUND) * r; // Rotates to desired orientation
+    //             new_leg_position_oBfB -= dp_fB; // Translate body accordingly
+    //             // Serial.print("Goal (b): "); new_leg_position_oBfB.print();
+    //             // Serial.print("Goal (g): "); (new_leg_position_oBfB / r).print();
+    //             foot[i]->setToPositionFromBody(new_leg_position_oBfB, Frame::BODY, time);
+    //         }
     //     }
-        
-    //     if (num_anchored > 0) {
-    //         centroid /= num_anchored;
-    //         centroid.z = 0;
-    //     }
+    //     // Serial.println();
     // }
 
 
@@ -773,40 +748,40 @@ public:
     // FUTURE: must account for if leg does not start on ground..."current height"?
 //     void step(float direction_yaw, float gait_length) {
 //         if (gait_state == 1) {
-//             leg[0]->setAnchored(true);
-//             leg[1]->setAnchored(false);
-//             leg[2]->setAnchored(false);
-//             leg[3]->setAnchored(true);
+//             foot[0]->setPLANTED(true);
+//             foot[1]->setPLANTED(false);
+//             foot[2]->setPLANTED(false);
+//             foot[3]->setPLANTED(true);
 //         } else {
-//             leg[0]->setAnchored(false);
-//             leg[1]->setAnchored(true);
-//             leg[2]->setAnchored(true);
-//             leg[3]->setAnchored(false);
+//             foot[0]->setPLANTED(false);
+//             foot[1]->setPLANTED(true);
+//             foot[2]->setPLANTED(true);
+//             foot[3]->setPLANTED(false);
 //         }
 //         // Raise moving legs
 //         for (int i = 0; i < NUM_LEGS; i++) {
-//             if (!(leg[i]->isAnchored())) {
-//               leg[i]->setToPositionFromShoulder(Point(gait_length * cos(direction_yaw DEG), 
+//             if (!(foot[i]->isPLANTED())) {
+//               foot[i]->setToPositionFromShoulder(Point(gait_length * cos(direction_yaw DEG), 
 //                                                       gait_length * sin(direction_yaw DEG), 
 //                                                       -height + STEP_HEIGHT), 
 //                                                 Frame::GROUND);
-//               leg[i]->sendSignals();
+//               foot[i]->sendSignals();
 //             }
 //         }
 //         delay(50);
 
-//         // Tilt body forward/Push anchored legs
+//         // Tilt body forward/Push PLANTED legs
 //         moveByPosition(gait_length * cos(direction_yaw DEG), gait_length * sin(direction_yaw DEG), 0);
 
 //         delay(50);
 //         // Put down moving legs
 //         for (int i = 0; i < NUM_LEGS; i++) {
-//             if (!(leg[i]->isAnchored())) {
-//                 leg[i]->gotoPositionFromShoulder(Point(2*gait_length * cos(direction_yaw DEG), 
+//             if (!(foot[i]->isPLANTED())) {
+//                 foot[i]->gotoPositionFromShoulder(Point(2*gait_length * cos(direction_yaw DEG), 
 //                                                        2*gait_length * sin(direction_yaw DEG), 
 //                                                        -height), 
 //                                                  Frame::GROUND);
-//                 leg[i]->sendSignals();
+//                 foot[i]->sendSignals();
 //             }
 
 //         }
@@ -817,9 +792,9 @@ public:
 //     // Serial.println("wave");
 //         for (int i = 0; i < NUM_LEGS; i++) {
 //             if (i == wave_state) {
-//                 leg[i]->setAnchored(false);
+//                 foot[i]->setPLANTED(false);
 //             } else {
-//                 leg[i]->setAnchored(true);
+//                 foot[i]->setPLANTED(true);
 //             }
 //         }
 // //         Serial.print("Stepping ");Serial.println(wave_state);
@@ -828,11 +803,11 @@ public:
 //         // Raise moving legs
 //         for (int i = 0; i < NUM_LEGS; i++) {
 //              Serial.println(i);
-//             if (!(leg[i]->isAnchored())) {
+//             if (!(foot[i]->isPLANTED())) {
 //               // Serial.println("ey");
-//               // leg[i]->gotoPositionFromShoulder(Point(gait_length * cos(direction_yaw DEG), gait_length * sin(direction_yaw DEG), -height + STEP_HEIGHT));
-//               leg[i]->moveByPosition(Point(1.5*gait_length * cos(direction_yaw DEG), 1.5*gait_length * sin(direction_yaw DEG), STEP_HEIGHT), orientation);
-//               leg[i]->sendSignals();
+//               // foot[i]->gotoPositionFromShoulder(Point(gait_length * cos(direction_yaw DEG), gait_length * sin(direction_yaw DEG), -height + STEP_HEIGHT));
+//               foot[i]->moveByPosition(Point(1.5*gait_length * cos(direction_yaw DEG), 1.5*gait_length * sin(direction_yaw DEG), STEP_HEIGHT), orientation);
+//               foot[i]->sendSignals();
 //             }
 //             // printLegs();
 //         }
@@ -840,54 +815,17 @@ public:
 
 //         delay(25);
 // // printLegs();
-//           // Tilt body forward/Push anchored legs
+//           // Tilt body forward/Push PLANTED legs
 //         moveByPosition(gait_length * cos(direction_yaw DEG), gait_length * sin(direction_yaw DEG), 0);
 
 //         // delay(25);
 //         // Put down moving legs
 //         for (int i = 0; i < NUM_LEGS; i++) {
-//             if (!(leg[i]->isAnchored())) {
-//                 leg[i]->moveByPosition(Point(1.5*gait_length * cos(direction_yaw DEG), 1.5*gait_length * sin(direction_yaw DEG), -STEP_HEIGHT), orientation);
-//               // leg[i]->gotoPositonFromBody(Point(2*gait_length * cos(direction_yaw DEG), 2*gait_length * sin(direction_yaw DEG), -STEP_HEIGHT), orientation);
-//                 leg[i]->sendSignals();
+//             if (!(foot[i]->isPLANTED())) {
+//                 foot[i]->moveByPosition(Point(1.5*gait_length * cos(direction_yaw DEG), 1.5*gait_length * sin(direction_yaw DEG), -STEP_HEIGHT), orientation);
+//               // foot[i]->gotoPositonFromBody(Point(2*gait_length * cos(direction_yaw DEG), 2*gait_length * sin(direction_yaw DEG), -STEP_HEIGHT), orientation);
+//                 foot[i]->sendSignals();
 //             }
 //         }
 //         wave_state = (wave_state + 1)%NUM_LEGS;
 //     }
-
-
-
-    // void setToOrientation(Rot new_orientation, float time=TIME_INSTANT) {
-    //     body_orientation = new_orientation;
-    //     // Calculate leg positions and check if they're valid
-    //     for (int i = 0; i < NUM_LEGS; i++) {
-    //         if (leg[i]->isAnchored())
-    //             leg[i]->setByPosition(POINT_ZERO, Frame::GROUND, time);
-    //     }
-    //     // If so, actuates and saves values
-    //     sendAnchoredSignals();
-    //     orientation = new_orientation;
-    // }
-
-    // // Moves origin by certain amount in ground frame
-    // void moveByPosition(Point dp, float time=TIME_INSTANT) {
-    //     // Calculates new positions
-    //     for (int i = 0; i < NUM_LEGS; i++) {
-    //         if (leg[i]->isAnchored())
-    //             leg[i]->moveByPosition(dp * -1, Frame::GROUND, time);
-                
-    //     }
-    //     // If so, actuates and saves values
-    //     sendAnchoredSignals();
-    //     // printLegs();
-
-    //     height += dz;
-    // }
-
-    // void sendAnchoredSignals() {
-    //     for (int i = 0; i < NUM_LEGS; i++) {
-    //         if (leg[i]->isAnchored()) {
-    //             leg[i]->sendSignals();
-    //         }
-    //     }
-    // }

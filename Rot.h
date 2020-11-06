@@ -5,6 +5,8 @@
 #include "math.h"
 
 #define ROT_ZERO Rot(0,0,0)
+#define ROT_NULL Rot(-999.9, -999.9, -999.9)
+
 
 // A 3d rotational state
 // CCW=+
@@ -52,9 +54,13 @@ public:
         z *= k;
     }
 
+    bool operator==(Rot r) {
+       return ((x==r.x) && (y==r.y) && (z==r.z));
+    }
+
     // Conversion to boolean
     explicit operator bool() const {
-        return !((x==0) && (y==0) && (z==0));
+        return !((x==-999.9) && (y==-999.9) && (z==-999.9));
     }
 
     Rot operator-() {
@@ -68,6 +74,12 @@ public:
         Serial.print(")");
         Serial.println();
     }
+
+    //#ifdef DEBUG
+    float norm() {
+        return sqrt(x*x+y*y+z*z);
+    }
+    //#endif
 };
 
 #endif
