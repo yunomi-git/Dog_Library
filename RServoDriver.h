@@ -12,11 +12,10 @@
 
 class RServoDriver : public Adafruit_PWMServoDriver {
 #define DEF_ANGLE_MAX  (90.0)
-#define DEF_PWM 		400
+#define DEF_PWM 		100
 #define DEF_ANGLE_MIN (-90.0)
-#define DEF_SIG_MIN    1450
-#define DEF_SIG_MAX	   3460
-#define DEF_SIG_MID	   2430
+#define DEF_SIG_MIN    350//1450
+#define DEF_SIG_MAX	   850//3460
 
 #define MAX_SERVO_NUM	16
 #define TABLE_MID_INDEX 9

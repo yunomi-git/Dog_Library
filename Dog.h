@@ -256,7 +256,7 @@ public:
         mounting_point = Point( LENGTH2, -WIDTH2, 0);
         leg_ur = DogLeg(&servo_driver,  0,  1,  2, mounting_point, mounting_point - starting_position + -foot_offset); // in future to enforce level starting, find way to set default_position.z = default_height conveniently.
         leg_ur.flipLR();
-        leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
+        //leg_ur.setSignalTables(table_chest_ur, table_shoulder_ur, table_elbow_ur);
         leg_ur.calibrateServos(LEG_UR_C_ANG_OFS, LEG_UR_S_ANG_OFS, LEG_UR_E_ANG_OFS);
         leg_ur.setID(0);
 
@@ -264,22 +264,20 @@ public:
         leg_br = DogLeg(&servo_driver,  4,  5,  6, mounting_point, mounting_point - starting_position + -foot_offset);
         leg_br.flipLR();
         leg_br.flipFB();
-        leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
+        //leg_br.setSignalTables(table_chest_br, table_shoulder_br, table_elbow_br);
         leg_br.calibrateServos(LEG_BR_C_ANG_OFS, LEG_BR_S_ANG_OFS, LEG_BR_E_ANG_OFS);
         leg_br.setID(1);
 
         mounting_point = Point(-LENGTH2, WIDTH2, 0);
         leg_bl = DogLeg(&servo_driver,  8,  9, 10, mounting_point, mounting_point - starting_position + foot_offset);
-        // leg_bl.flipLR();
         leg_bl.flipFB();
-        leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
+        //leg_bl.setSignalTables(table_chest_bl, table_shoulder_bl, table_elbow_bl);
         leg_bl.calibrateServos(LEG_BL_C_ANG_OFS, LEG_BL_S_ANG_OFS, LEG_BL_E_ANG_OFS);
         leg_bl.setID(2);
 
         mounting_point = Point( LENGTH2, WIDTH2, 0);
         leg_ul = DogLeg(&servo_driver, 12, 13, 14, mounting_point, mounting_point - starting_position + foot_offset);
-        // leg_ul.flipLR();
-        leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
+        //leg_ul.setSignalTables(table_chest_ul, table_shoulder_ul, table_elbow_ul);
         leg_ul.calibrateServos(LEG_UL_C_ANG_OFS, LEG_UL_S_ANG_OFS, LEG_UL_E_ANG_OFS);
         leg_ul.setID(3);
 
