@@ -155,7 +155,7 @@ public:
         imu::Vector<3> euler = q.toEuler();
         euler.toDegrees();
 
-        return Rot(euler.z(), -euler.y(), -euler.x()) - orientation_offsets; // Technically not correct? Rotation matrices may not concatenate as subtraction...but accurate enough
+        return Rot(-euler.z(), -euler.y(), euler.x()) - orientation_offsets; // Technically not correct? Rotation matrices may not concatenate as subtraction...but accurate enough
     }
 
     Point getRawLinearAcceleration() {
@@ -175,8 +175,7 @@ public:
 
         // the "measured" yaw value
         float IMU_z = raw_orientation.z;
-        float IMU_z_prev = orientation_info.getPrevHistoryValue(1).z;   // X output of IMU is actually rotation about z
-                                                        // TODO check that this is the correct value to use
+        float IMU_z_prev = orientation_info.getPrevHistoryValue(1).z;
 
         IMU_z += IMU_z_num_turns * 360;
         // Makes the IMU loop instead of just staying resetting
