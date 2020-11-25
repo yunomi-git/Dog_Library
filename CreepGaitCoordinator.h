@@ -3,315 +3,211 @@
 
 #include "Dog.h"
 
-// #define DEBUG
 
-// TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// -
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#define LIFT_HEIGHT 30
 
-// USAGE DETAILS
-/*
- */
+#define TRANSLATION_INPUT_SCALING 40
+#define TRANSLATION_INPUT_THRESHOLD 5
+#define ROTATION_INPUT_SCALING 8
+#define ROTATION_LEG_INPUT_MULTIPLIER 3
 
-/**
-* IMPLEMENTATION DETAILS
+#define STATE_PREPARE_TIME 0.5
+#define STATE_PREPARE_OVERLAP_FACTOR 0.4
+#define STATE_LIFT_TIME 0.1
+#define STATE_LIFT_OVERLAP_FACTOR 0
+#define STATE_PLANT_TIME 0.2
+#define STATE_PLANT_OVERLAP_FACTOR 0.7
+#define STATE_RETURN_TIME 0.25
+#define STATE_RETURN_OVERLAP_FACTOR 0
 
-*/
-
-// Inputs: 
-
-// Outputs: body: if it should move, where it should move, timing, 
-//              if foot should move, where it should move, timing
-
-// Keep track of:
-//          next anchor points, 
-//          all timings
-//          current state of creep motion ()
 
 class CreepGaitCoordinator {
-private:
-    
-    // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // ======== Walking =====================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // ========================================~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~   
 
-        // Defaults
-        Rot *body_orientation;
-        Point default_leg_position[4];
-        Point default_height;
-        Point raise_height;
-        Point push_height;
+    Dog *dog;
 
-        // Movement Request
-        float *dx; // These are pointers. They are updated externally and read via getRequested___()
-        float *dy;
-        float *dyaw;
-        Frame frame; // Frame that the movement request was provided in
+    struct CreepMotionCommand {
+        Point translation;
+        Rot rotation;
+        Rot leg_rotation;
 
-        // State
-        int state;
-        Timer timer;
-        bool begin_state;
-        bool leg_is_swinging[4];
-
-        TrottingInfo() {}
-
-        TrottingInfo(float *x, float *y, float *yaw, Rot *body_orientation_ref) {
-            default_leg_position[0] = Point( LENGTH2,  WIDTH2, 0); // All these need to be variablized
-            default_leg_position[1] = Point(-LENGTH2,  WIDTH2, 0);
-            default_leg_position[2] = Point(-LENGTH2, -WIDTH2, 0);
-            default_leg_position[3] = Point( LENGTH2, -WIDTH2, 0);
-
-            leg_is_swinging[0] = false;
-            leg_is_swinging[1] = true;
-            leg_is_swinging[2] = false;
-            leg_is_swinging[3] = true;
-
-            dy = y;
-            dx = x;
-            dyaw = yaw;
-            body_orientation = body_orientation_ref;
-
-            default_height = Point(0, 0, 110);
-            raise_height = Point(0, 0, 35);
-            push_height = Point(0, 0, 15);
-
-            frame = Frame::BODY;
-            state = 0;
-            begin_state = true;
-        }
-
-        Rot getBodyYaw() {
-            return Rot(0, 0, body_orientation->z);
-        }
-
-        // Return Desired position in ground frame
-        Point getRequestedLegPosition(int i) {
-            Rot r = getRequestedRot() + getBodyYaw();
-            Point dp = getRequestedTrans();
-            if (frame == Frame::BODY) {
-                dp /= r;
-            }
-            return default_leg_position[i] / r + dp;
-        }
-
-        // Return basic position. in current heading
-        Point getDefaultLegPosition(int i) {
-            return default_leg_position[i] / getBodyYaw();
-        }
-
-        // Amount to rotate by
-        Rot getRequestedRot() {
-            return Rot(0, 0, *dyaw);
-        }
-
-        Point getRequestedTrans() {
-            return Point(*dx, *dy, 0);
-        }
-
-        bool legIsSwinging(int i) {
-            return leg_is_swinging[i];
-        }
-
-        void switchPhase() {
-            for (int i = 0; i < NUM_LEGS; i++) {
-                leg_is_swinging[i] = !leg_is_swinging[i];
-            }
+        CreepMotionCommand() {
+            translation = POINT_ZERO;
+            rotation = ROT_ZERO;
+            leg_rotation = ROT_ZERO;
         }
     };
 
-    // Register Request pointers
-    void beginTrot(float *x, float *y, float *yaw) {
-        trot_info = TrottingInfo(x, y, yaw, &body_orientation);
-        trot_info.timer.reset();
+    CreepMotionCommand desired_motion;
+    Rot body_orientation_modification;
+    int state;
+    #define NUM_CREEP_STATES 5
+    CreepStateInfo creep_states[NUM_CREEP_STATES];
+
+    Rot current_rotation = ROT_ZERO;
+    Point body_distance_from_original_centroid = POINT_ZERO;
+    int foot_to_move = 0;
+    Point next_foot_anchor_oC;
+
+    Point default_body_position = Point(0, 0, 100);
+    int step_order[4] = {0, 2, 3, 1};
+    int step_order_iterator = 3;
+
+public:
+    CreepGaitCoordinator() {
+        state = 0;
+        creep_state_info[0] = CreepStateInfo(waitForMotionCommand, 0, TIME_INFINITE);
+        creep_state_info[1] = CreepStateInfo(prepareCOM,           1, STATE_PREPARE_TIME * (1-STATE_PREPARE_OVERLAP_FACTOR));
+        creep_state_info[2] = CreepStateInfo(liftFoot,             2, STATE_LIFT_TIME * (1-STATE_LIFT_OVERLAP_FACTOR),       );
+        creep_state_info[3] = CreepStateInfo(plantFoot,            3, STATE_PLANT_TIME * (1-STATE_PLANT_OVERLAP_FACTOR));
+        creep_state_info[4] = CreepStateInfo(returnCOM,            4, STATE_RETURN_TIME);
     }
 
-    // Register frame in which requests are made
-    void setTrotFrame(Frame frame) {
-        trot_info.frame = frame;
-    }
-
-    // Algorithm 2 - 2 states
-    void trot() {
-        Rot desired_orientation = body_orientation*0.5;
-        desired_orientation.z = body_orientation.z;
-        //Serial.print("desired orient: "); desired_orientation.print();
-
-        switch (trot_info.state) {
-            case 0: {// Kick legs out, push body forward; maintain balance
-                if (trot_info.begin_state) {
-
-                    // Serial.println("State 1: Kick Leg");
-                    int period = 400;
-
-                    // Kick 2 feet out
-                    for (int i = 0; i < NUM_LEGS; i++) {
-                        if (trot_info.legIsSwinging(i)) {
-                            leg[i]->setState(FootState::FIXED);
-                            leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i) + trot_info.raise_height, 
-                                                              Frame::GROUND, period*0.99);
-                        } else {
-                            leg[i]->setState(FootState::PLANTED);
-                        }
-                    }
-                    // Push Body Forward and up
-                    setFromCentroid(desired_orientation + trot_info.getRequestedRot()/2, 
-                                    trot_info.default_height + trot_info.getRequestedTrans(),// + trot_info.push_height, 
-                                    Frame::GROUND, period * 0.99);
-                    
-                    trot_info.timer.reset(period);
-                    trot_info.begin_state = false;
-                    break;
-                }
-               // maintain balance
-
-                // Finished. Switch state.
-                if (trot_info.timer.timeOut()) {
-                    trot_info.state = 1;
-                    trot_info.begin_state = true;
-                } else {
-                    break;
-                }
-            }
-            case 1: {// Setting feet down
-                if (trot_info.begin_state) {
-                    // Serial.println("State 2: Return Leg");
-                    int period = 400;
-
-                    // Place feet on floor
-                    for (int i = 0; i < NUM_LEGS; i++) {
-                        if (trot_info.legIsSwinging(i)) {
-
-                            leg[i]->setState(FootState::FIXED);
-                            leg[i]->setToPositionFromCentroid(trot_info.getRequestedLegPosition(i), 
-                                                              Frame::GROUND, period * 0.99);
-                            // leg[i]->setState(FootState::FLOATING);
-                            // leg[i]->setToPositionFromBody(trot_info.getRequestedLegPosition(i) - trot_info.default_height, 
-                            //                               Frame::GROUND, period*0.99);
-                        }
-                    }
-                    // Continue Pushing Body
-                    setFromCentroid(desired_orientation + trot_info.getRequestedRot(), 
-                                    trot_info.default_height + trot_info.getRequestedTrans(), 
-                                    Frame::GROUND, period * 0.99); // move dog body up a bit
-                    
-                    trot_info.timer.reset(period);
-                    trot_info.begin_state = false;
-                    break;
-                }
-
-                // Check if legs have hit the ground. Also maintain balance.
-                bool legs_hit_ground = false;
-                for (int i = 0; i < NUM_LEGS; i++) {
-                    if (trot_info.legIsSwinging(i)) {
-                        if ((leg[i]->getCurrentFootPositionFromCentroid(Frame::GROUND)).z < 1.5)
-                            legs_hit_ground = true;
-                    }
-                }
-
-
-                // Legs have completed trajectory. Switch to other legs
-                if (trot_info.timer.timeOut() || legs_hit_ground) {
-                    trot_info.state = 0;
-                    trot_info.begin_state = true;
-                    trot_info.switchPhase();
-                } else {
-                    break;
-                }
-            }
+    operate() {
+        if (getCurrentCreepState()->is_in_startup) {
+            getCurrentCreepState()->startupAction();
+            getCurrentCreepState()->setStarted();
         }
-
-        operate();Serial.println("");
+        
+        getCurrentCreepState()->normalAction();
+        
+        if (getCurrentCreepState()->isTimeToEnd()) {
+            getCurrentCreepState()->endAction();
+            getCurrentCreepState()->reset();
+            switchToState(getCurrentCreepState()->getNextState());
+        }
     }
 
+    CreepStateInfo *getCurrentCreepState() {
+        return (creep_states + state); // state is the index
+    }
+
+    void switchToState(int n_state) {
+        state = n_state;
+    }
+
+    void waitForMotionCommand(ActionMode mode) {
+        // literally do nothing...
+        if (mode == STARTUP) {
+  
+        } else if (mode == NORMAL) {
+            //body move to desired orientation?
+        } else {
+
+        }
+    }
+
+    void sendMotionCommand(float x_motion, float y_motion, float yaw_motion) {
+        if (state == 0) {
+            desired_motion.translation = Point(x_motion, y_motion, 0);
+            desired_motion.rotation = Rot(0, 0, yaw_motion);
+            desired_motion.leg_rotation = desired_motion.rotation * ROTATION_LEG_INPUT_MULTIPLIER;
+
+            getCurrentCreepState().end();
+            getCurrentCreepState()->setNextState(1);
+        }
+    }
+
+    void sendReturnToCOMCommand() {
+        if (state == 0) {
+            getCurrentCreepState().end();
+            getCurrentCreepState()->setNextState(4); 
+        }
+    }
+
+    void modifyBodyOrientation(Rot orientation_modification) {
+        body_orientation_modification = orientation_modification;
+    }
+
+
+    void prepareCOM(ActionMode mode) {
+        if (mode == STARTUP) {
+            Point old_body_distance_from_planted_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR) - default_body_position);;
+            
+            foot_to_move = chooseFootToMove();
+            next_foot_anchor_oC = calculateNextFootAnchor_fF(foot_to_move);
+            
+            dog->switchFootStance(foot_to_move, FootStance::SET);
+            Point old_body_distance_from_set_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR) - default_body_position);
+            body_distance_from_original_centroid = old_body_distance_from_set_centroid - old_body_distance_from_planted_centroid;
+            
+            float time = getCurrentCreepState()->getActionPeriod();
+            dog->moveBodyToPositionFromCentroid(default_body_position, Frame::FLOOR, time);
+            dog->moveBodyToOrientation(current_rotation + desired_rotation, time);
+            current_rotation += desired_rotation;    
+        } else if (mode == NORMAL) {
+        
+        } else {
+            getCurrentCreepState()->setNextState(2);
+        }
+    }
+
+    void liftFoot(ActionMode mode) {
+        if (mode == STARTUP) {
+            Point lift_height = Point(0,0,LIFT_HEIGHT);
+            Point next_foot_position_oBfF = (dog->getFootPositionFromBody(foot_to_move, Frame::FLOOR) + lift_height);
+            
+            float time = getCurrentCreepState()->getActionPeriod();
+            dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);        
+        } else if (mode == NORMAL) {
+        
+        } else {
+            getCurrentCreepState()->setNextState(3);
+        }
+    }
+
+    void plantFoot(ActionMode mode) {
+        if (mode == STARTUP) {
+            Point centroid_position = -dog->getBodyPositionFromCentroid(Frame::FLOOR);
+            Point next_foot_position_oBfF = (centroid_position + next_foot_anchor_oC) - body_distance_from_original_centroid;
+
+            float time = getCurrentCreepState()->getActionPeriod();
+            dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);
+        } else if (mode == NORMAL) {
+        
+        } else {
+            dog->switchFootStance(foot_to_move, FootStance::PLANTED);
+            getCurrentCreepState()->setNextState(0);
+        }
+    }
+
+    int chooseFootToMove() {
+    //    float max_distance = 0;
+    //    int foot_to_move = 0;
+    //    for (int i = 0; i < NUM_LEGS; i++) {
+    //        Point next_foot_position = dog->getFootPositionFromBody(i, FRAME::BODY) * desired_rotation + desired_translation;
+    //        Point deviation_from_anchor = next_foot_position - calculateNextFootAnchor_fF(i);// needs to be written
+    //        float distance = deviation_from_anchor.norm();
+    //        if (distance < max_distance) {
+    //            foot_to_move = i;
+    //            max_distance = distance;
+    //        }
+    //    }
+    //    return foot_to_move;
+        step_order_iterator = (step_order_iterator + 1)%4;
+        return step_order[step_order_iterator];
+    }
+
+    Point calculateNextFootAnchor_fF(int foot_i) {
+        Point default_anchor = dog->getDefaultFootPosition(foot_i, Frame::BODY) + Point(0, 0, dog->getStartingHeight());
+        return (default_anchor + desired_motion.translation) * (current_rotation + desired_motion.leg_rotation); // body frame movement
+    }
+
+    void returnCOM(ActionMode mode) {
+        if (mode == STARTUP) {
+            dog->switchFootStance(foot_to_move, FootStance::PLANTED);
+            Point default_height = Point(0,0,100);
+            
+            float time = getCurrentCreepState()->getActionPeriod();
+            dog->moveBodyToPositionFromCentroid(default_height, Frame::FLOOR, time);
+            dog->moveBodyToOrientation(current_rotation + desired_rotation, time);
+            current_rotation += desired_rotation;        
+        } else if (mode == NORMAL) {
+        
+        } else {
+            getCurrentCreepState()->setNextState(0);
+        }
+    }
+};
 
 
 #endif
-
-// Non-Trajectory Walking
-    // Body moves by gait length.
-    // Leg moves by 2x gait length
-    // FUTURE: must account for if leg does not start on ground..."current height"?
-//     void step(float direction_yaw, float gait_length) {
-//         if (gait_state == 1) {
-//             leg[0]->setPLANTED(true);
-//             leg[1]->setPLANTED(false);
-//             leg[2]->setPLANTED(false);
-//             leg[3]->setPLANTED(true);
-//         } else {
-//             leg[0]->setPLANTED(false);
-//             leg[1]->setPLANTED(true);
-//             leg[2]->setPLANTED(true);
-//             leg[3]->setPLANTED(false);
-//         }
-//         // Raise moving legs
-//         for (int i = 0; i < NUM_LEGS; i++) {
-//             if (!(leg[i]->isPLANTED())) {
-//               leg[i]->setToPositionFromShoulder(Point(gait_length * cos(direction_yaw DEG), 
-//                                                       gait_length * sin(direction_yaw DEG), 
-//                                                       -height + STEP_HEIGHT), 
-//                                                 Frame::GROUND);
-//               leg[i]->sendSignals();
-//             }
-//         }
-//         delay(50);
-
-//         // Tilt body forward/Push PLANTED legs
-//         moveByPosition(gait_length * cos(direction_yaw DEG), gait_length * sin(direction_yaw DEG), 0);
-
-//         delay(50);
-//         // Put down moving legs
-//         for (int i = 0; i < NUM_LEGS; i++) {
-//             if (!(leg[i]->isPLANTED())) {
-//                 leg[i]->gotoPositionFromShoulder(Point(2*gait_length * cos(direction_yaw DEG), 
-//                                                        2*gait_length * sin(direction_yaw DEG), 
-//                                                        -height), 
-//                                                  Frame::GROUND);
-//                 leg[i]->sendSignals();
-//             }
-
-//         }
-//         gait_state *= -1;
-//     }
-
-//     void wave_step(float direction_yaw, float gait_length) {
-//     // Serial.println("wave");
-//         for (int i = 0; i < NUM_LEGS; i++) {
-//             if (i == wave_state) {
-//                 leg[i]->setPLANTED(false);
-//             } else {
-//                 leg[i]->setPLANTED(true);
-//             }
-//         }
-// //         Serial.print("Stepping ");Serial.println(wave_state);
-// // printLegs();
-//  // Serial.println("Raising Leg");
-//         // Raise moving legs
-//         for (int i = 0; i < NUM_LEGS; i++) {
-//              Serial.println(i);
-//             if (!(leg[i]->isPLANTED())) {
-//               // Serial.println("ey");
-//               // leg[i]->gotoPositionFromShoulder(Point(gait_length * cos(direction_yaw DEG), gait_length * sin(direction_yaw DEG), -height + STEP_HEIGHT));
-//               leg[i]->moveByPosition(Point(1.5*gait_length * cos(direction_yaw DEG), 1.5*gait_length * sin(direction_yaw DEG), STEP_HEIGHT), orientation);
-//               leg[i]->sendSignals();
-//             }
-//             // printLegs();
-//         }
-//           // Serial.println("Leg Raised");
-
-//         delay(25);
-// // printLegs();
-//           // Tilt body forward/Push PLANTED legs
-//         moveByPosition(gait_length * cos(direction_yaw DEG), gait_length * sin(direction_yaw DEG), 0);
-
-//         // delay(25);
-//         // Put down moving legs
-//         for (int i = 0; i < NUM_LEGS; i++) {
-//             if (!(leg[i]->isPLANTED())) {
-//                 leg[i]->moveByPosition(Point(1.5*gait_length * cos(direction_yaw DEG), 1.5*gait_length * sin(direction_yaw DEG), -STEP_HEIGHT), orientation);
-//               // leg[i]->gotoPositonFromBody(Point(2*gait_length * cos(direction_yaw DEG), 2*gait_length * sin(direction_yaw DEG), -STEP_HEIGHT), orientation);
-//                 leg[i]->sendSignals();
-//             }
-//         }
-//         wave_state = (wave_state + 1)%NUM_LEGS;
-//     }

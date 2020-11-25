@@ -638,11 +638,6 @@ public:
     //     Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
     // }
 
-    // void printCentroid() {
-    //     Serial.print("Centoid (oBfG): "); centroid_oBfG.print();
-    // }
-
-
 #endif
 };
 
