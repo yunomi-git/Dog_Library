@@ -3,6 +3,8 @@
 
 #include <arduino.h>
 
+#define TIME_INFINITE -1000
+
 // TODO: cant do Timer a; a = Timer(xxx); or an error will happen...not sure why
 // Used to time the length of functions or create a delay.
 // Can be set to check milliseconds or microseconds.

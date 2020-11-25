@@ -9,9 +9,6 @@
 #include <Rot.h>
 #include "Trajectory.h"
 
-// TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// - Kinematics are fucked up because of frame switch...rederive
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 // Dog leg on a body
 
@@ -205,10 +202,7 @@ private:
         float x_ = x;
         float z_ = -sqrt(y*y + z*z - L_CHEST*L_CHEST);
 
-        // Solve for chest angle
         float angle_chest = atan2(y, -z) RAD - atan2(L_CHEST, -z_) RAD;
-
-  	    // Solve for shoulder, elbow angles      
         // Note: acos is always positive, so joint never inverts!
         float effective_leg_length = sqrt(x_*x_ + z_*z_);
         float effective_leg_angle = -atan2(x_, -z_) RAD;
@@ -216,28 +210,36 @@ private:
         float angle_shoulder = asin(L_FOREARM / effective_leg_length * sin(interior_elbow_angle DEG)) RAD + effective_leg_angle;
         float angle_elbow = -(180 - angle_shoulder - interior_elbow_angle) + WISHBONE_ANGLE; // servo angle is offset from actual elbow by WISHBONE
 
-        // Check if returned angles are feasible
-        bool ikin_err = false;
-        if (!WITHIN(angle_chest, -75, 75)) 					{Serial.print("IKIN ERR: Chest at "); 			 Serial.println(angle_chest); 					ikin_err = true;}
-        if (!WITHIN(angle_elbow,  67, 185)) 				{Serial.print("IKIN ERR: Elbow at "); 			 Serial.println(angle_elbow); 					ikin_err = true;}
-        if (!WITHIN(angle_elbow - angle_shoulder, 20, 160)) {Serial.print("IKIN ERR: Shoulder - Elbow at "); Serial.println(angle_shoulder - angle_elbow);  ikin_err = true;}
-        
+        int ikin_error_code = 0;
+        if      (!WITHIN(angle_chest, -75, 75)) 					{ikin_error_code = 1;}
+        else if (!WITHIN(angle_elbow,  67, 185)) 				    {ikin_error_code = 2;}
+        else if (!WITHIN(angle_elbow - angle_shoulder, 20, 160))    {ikin_error_code = 3;}
+  
+        #ifdef DEBUG 
+        if      (ikin_error_code == 1) {Serial.print("IKIN ERR: Chest at "); Serial.println(angle_chest);}
+        else if (ikin_error_code == 2) {Serial.print("IKIN ERR: Elbow at "); Serial.println(angle_elbow);}
+        else if (ikin_error_code == 3) {Serial.print("IKIN ERR: Shoulder - Elbow at ");  Serial.println(angle_shoulder - angle_elbow);} 
+        #endif
+
         // Saves the calculated values (as appropriate)
-        if (ikin_err) {
-        	if (id != -1) {
-        		Serial.print("Leg "); Serial.print(id); Serial.print(": ");
-        	}
-        	Serial.print("Requested Point: "); Point(x, y, z).print();
-        	kinematics_info.is_valid = false;
-        } else {
-        	kinematics_info.foot_pos = Point(x, y, z);
+        if (ikin_error_code == 0) {
+            kinematics_info.foot_pos = Point(x, y, z);
             kinematics_info.chest_angle = angle_chest;
             kinematics_info.shoulder_angle = angle_shoulder;
             kinematics_info.elbow_angle = angle_elbow;
             kinematics_info.is_valid = true;
+        } else {
+            kinematics_info.is_valid = false;
+
+            #ifdef DEBUG
+            if (id != -1) {
+                Serial.print("Leg "); Serial.print(id); Serial.print(": ");
+            }
+            Serial.print("Requested Point: "); Point(x, y, z).print();
+            #endif
         }
 
-        return kinematics_info;
+        return kinematics_info; 
     }
 
     // Moves foot to a point in the BODY frame relative to the SHOULDER position.
