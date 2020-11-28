@@ -3,7 +3,7 @@
 
 #include <arduino.h>
 
-#define TIME_INFINITE -1000
+#define TIME_INFINITE -1
 
 // TODO: cant do Timer a; a = Timer(xxx); or an error will happen...not sure why
 // Used to time the length of functions or create a delay.

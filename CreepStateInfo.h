@@ -1,13 +1,10 @@
-#ifndef __CREEP__
-#define __CREEP__
+#ifndef __CREEPSI__
+#define __CREEPSI__
 
 #include "Timer.h"
 
-enum ActionMode {STARTUP, NORMAL, END};
 
 class CreepStateInfo {
-    typedef void (*actionFunction)(ActionMode);
-    actionFunction action;
     int id;
     float period;
 
@@ -16,15 +13,21 @@ class CreepStateInfo {
     bool time_to_end;
     int next_state;
 
+public:
     CreepStateInfo() = default;
 
-    CreepStateInfo(int n_id, action_function new_action, float new_period) {
+    CreepStateInfo(int n_id, float new_period) {
         period = new_period;
         if (period != TIME_INFINITE) {
-            state_end_timer.reset(period * 1.1);
+            state_end_timer.reset(period * 1.05);
         }
         id = n_id;
-        action = new_action;
+        is_in_startup = true;
+        time_to_end = false;
+        next_state = id;
+    }
+
+    void reset() {
         is_in_startup = true;
         time_to_end = false;
         next_state = id;
@@ -35,25 +38,15 @@ class CreepStateInfo {
         state_end_timer.reset();
     }
 
-    void reset() {
-        is_in_startup = true;
-        time_to_end = false;
-        next_state = id;
-    }
-
-    bool isTimeToEnd() {
-        return (period != TIME_INFINITE && state_end_timer.timeOut()) || time_to_end;
+    void setEnded() {
+        time_to_end = true;
     }
 
     void setNextState(int n_state) {
         next_state = n_state;
     }
 
-    void setEnded() {
-        time_to_end = true;
-    }
-
-    void getActionPeriod() {
+    float getActionPeriod() {
         return period;
     }
 
@@ -61,15 +54,15 @@ class CreepStateInfo {
         return next_state;
     }
 
-    void startupAction() {
-        action(STARTUP);
+    bool isInStartup() {
+        return is_in_startup;
     }
 
-    void normalAction() {
-        action(NORMAL);
+    bool isTimeToEnd() {
+        return (period != TIME_INFINITE && state_end_timer.timeOut()) || time_to_end;
     }
 
-    void endAction() {
-        action(END);
-    }
+
 };
+
+#endif

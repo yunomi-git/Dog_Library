@@ -12,6 +12,8 @@ class TrajectoryInfo {
         float final_time;
         State final_state;
 
+        State state_adjustment;
+
 public:
         TrajectoryInfo() {
             is_active = false;
@@ -23,6 +25,7 @@ public:
             prev_time = 0;
             final_time = nfinal_time;
             final_state = nfinal_state;
+            state_adjustment = State{};
         }
 
         void adjustFinalTime(float n_final_time) {
@@ -30,9 +33,14 @@ public:
                 final_time = n_final_time;
         }
 
-        void adjustFinalState(Point n_final_state) {
+        void adjustFinalState(State n_final_state) {
             if (is_active)
                 final_state = n_final_state;
+        }
+
+        void setStateAdjustment(State n_state_adjustment) {
+            if (is_active) 
+                state_adjustment = n_state_adjustment;
         }
 
         State getRemainingState(State current_state) {
