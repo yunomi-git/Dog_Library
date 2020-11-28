@@ -382,6 +382,10 @@ public:
         body_orientation_trajectory_fF2B.adjustFinalTime(time);
     }
 
+    void adjustBodyOrientationGoalBy(Rot adjustment) {
+        body_orientation_trajectory_fF2B.setStateAdjustment(adjustment);
+    }
+
     // Move to original positions and anchors
     void resetDefaultStance() {
         Point starting_position = Point(0, 0, DEFAULT_LEG_HEIGHT);

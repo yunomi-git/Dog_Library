@@ -153,6 +153,10 @@ public:
         return (state == 0);
     }
 
+    Rot getCurrentOrientation() {
+        return current_rotation;
+    }
+
 private:
     void prepareCOM(ActionMode mode) {
         if (mode == STARTUP) {
