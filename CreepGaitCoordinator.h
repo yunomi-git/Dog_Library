@@ -49,6 +49,8 @@ class CreepGaitCoordinator {
     int foot_to_move = 0;
     Point next_foot_anchor_oC;
 
+    bool overrideFootChoice = false;
+    int overridden_foot_to_move = 0;
     Point default_body_position = Point(0, 0, 100);
     int step_order[4] = {0, 2, 3, 1};
     int step_order_iterator = 3;
@@ -75,7 +77,7 @@ public:
             getCurrentCreepState()->setStarted();
         }
         
-        doCurrentStateAction(NORMAL);;
+        doCurrentStateAction(NORMAL);
         
         if (getCurrentCreepState()->isTimeToEnd()) {
             doCurrentStateAction(END);
@@ -119,6 +121,20 @@ public:
 
             getCurrentCreepState()->setEnded();
             getCurrentCreepState()->setNextState(1);
+        }
+    }
+
+    void sendMotionCommandUsingFoot(int foot_i, float x_motion, float y_motion, float yaw_motion) {
+        if (state == 0) {
+            desired_motion.translation = Point(x_motion, y_motion, 0);
+            desired_motion.rotation = Rot(0, 0, yaw_motion);
+            desired_motion.leg_rotation = desired_motion.rotation * ROTATION_LEG_INPUT_MULTIPLIER;
+
+            getCurrentCreepState()->setEnded();
+            getCurrentCreepState()->setNextState(1);
+
+            overrideFootChoice = true;
+            overridden_foot_to_move = foot_i;
         }
     }
 
@@ -190,6 +206,10 @@ private:
     }
 
     int chooseFootToMove() {
+        if (overrideFootChoice) {
+            overrideFootChoice = false;
+            return overridden_foot_to_move;
+        }
         float max_distance = 0;
         int foot_to_move = 0;
         for (int i = 0; i < NUM_LEGS; i++) {
@@ -218,7 +238,7 @@ private:
             
             float time = getCurrentCreepState()->getActionPeriod();
             dog->moveBodyToPositionFromCentroid(default_height, Frame::FLOOR, time);
-            dog->moveBodyToOrientation(current_rotation + desired_motion.rotation, time);
+            dog->moveBodyToOrientation(current_rotation, time);
             current_rotation += desired_motion.rotation;        
         } else if (mode == NORMAL) {
         

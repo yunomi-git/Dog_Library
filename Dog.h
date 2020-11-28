@@ -219,6 +219,7 @@ public:
         // Coordination Setup
         for (int i = 0; i < NUM_LEGS; i++) {
             foot_note[i].setAnchorPoint(foot[i]->getDefaultPosition_oBfB() + set_body_position_oCfF);
+            foot_note[i].switchStance(FootStance::PLANTED);
         }
     }
 
@@ -498,7 +499,7 @@ public:
 
         if (leg_update_timer.timeOut()) {
             leg_update_timer.reset();
-            bool anchored_leg_motion_feasible = true;
+            bool anchored_leg_motion_feasible = false;
 
             if (bodyIsInTrajectory()) {
                 Point next_body_position_oCfF = body_position_trajectory_oCfF.getNextState(set_body_position_oCfF);
@@ -521,7 +522,7 @@ public:
 
             checkAndActuateLiftedLegMotion();
 
-            if(anchored_leg_motion_feasible && bodyIsInTrajectory()) {
+            if(anchored_leg_motion_feasible) {
                 actuateAnchoredLegMotions();
             }
         }

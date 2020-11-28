@@ -5,7 +5,6 @@
 
 
 class CreepStateInfo {
-   // actionFunction action;
     int id;
     float period;
 
