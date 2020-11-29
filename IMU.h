@@ -45,15 +45,10 @@ struct IMU {
         }
     };
 
-    sensor_history_info<Point> lin_accel_info;
-    sensor_history_info<Point> gravity_info;
+    // sensor_history_info<Point> lin_accel_info;
+    // sensor_history_info<Point> gravity_info;
     sensor_history_info<Rot> orientation_info{1};
-
-// Too inaccurate to use
-    // Point position;
-    // Point velocity;
-
-    // float timer;
+    sensor_history_info<Rot> gyro_info{10};
 
 public:
     IMU() {cmode = SINGLE;}
@@ -61,8 +56,6 @@ public:
     void setCollectionMode(collection_mode mode) {cmode = mode;}
 
     void defaultStartup() {
-        // Set up storage containers
-
         /* Initialise the sensor, no magnetometoer */
         if(!bno.begin(Adafruit_BNO055::OPERATION_MODE_IMUPLUS))
         {
@@ -129,19 +122,11 @@ public:
         }
     }
 
-    Point getLinearAcceleration() {
+    Rot getRotVelocity() {
         if (cmode == CONTINUOUS) {
-            return lin_accel_info.value;
+            return gyro_info.value;
         } else {
-            return getRawLinearAcceleration();
-        }
-    }
-
-    Point getGravity() {
-        if (cmode == CONTINUOUS) {
-            return gravity_info.value;
-        } else {
-            return getRawGravity();
+            return getRawRotVelocity();
         }
     }
 
@@ -158,14 +143,11 @@ public:
         return Rot(-euler.z(), -euler.y(), euler.x()) - orientation_offsets; // Technically not correct? Rotation matrices may not concatenate as subtraction...but accurate enough
     }
 
-    Point getRawLinearAcceleration() {
-        imu::Vector<3> accel = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
-        return Point(accel.x(), -accel.y(), accel.z()) / orientation_offsets; // Seems to work as intended
-    }
 
-    Point getRawGravity() {
-        imu::Vector<3> accel = bno.getVector(Adafruit_BNO055::VECTOR_GRAVITY);
-        return Point(accel.x(), -accel.y(), accel.z()) / orientation_offsets;
+    Rot getRawRotVelocity() {
+        imu::Vector<3> v = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+
+        return Rot(-v.z(), -v.y(), v.x());
     }
 
 // Processes sensor data
@@ -190,14 +172,9 @@ public:
         
 
         orientation_info.updateHistory(raw_orientation);
-        lin_accel_info.updateHistory(getRawLinearAcceleration());
-        gravity_info.updateHistory(getRawGravity());
-
-        // Estimate position and velocity
-        // float dt = millis() - timer; // in ms
-        // velocity += lin_accel_info.value * dt/1000.0;
-        // position += velocity * dt/1000.0;
-        // timer = millis();
+//        lin_accel_info.updateHistory(getRawLinearAcceleration());
+//        gravity_info.updateHistory(getRawGravity());
+        gyro_info.updateHistory(getRawRotVelocity());
     }
 };
 

@@ -147,6 +147,7 @@ private:
                                    // Body position = -centroid
     // Experimental
     Point world_centroid_position_oWfF; // Position of the body relative to startup position 
+    Rot meas_body_rot_velocity_fG2B;
 
 // PARAMETERS
     // From calibration data
@@ -213,6 +214,7 @@ public:
         meas_body_orientation_fG2B = ROT_ZERO;   // Dog will start at level height
         set_body_orientation_fF2B = ROT_ZERO;    // Feet default startup will be at normal orientation
         set_body_position_oCfF = starting_position;      // Body will start up at default height 
+        meas_body_rot_velocity_fG2B = ROT_ZERO;
 
         world_centroid_position_oWfF = POINT_ZERO;
 
@@ -229,7 +231,7 @@ public:
         servo_driver.defaultStartup();
 
     #ifndef DEBUG_COMPUTATION
-        bno_imu.setCollectionMode(IMU::SINGLE);
+        bno_imu.setCollectionMode(IMU::CONTINUOUS);
         bno_imu.defaultStartup();
     #endif
 
@@ -298,6 +300,10 @@ public:
 
     Rot getBodyIMUOrientation_fG2B() {
         return meas_body_orientation_fG2B;
+    }
+
+    Rot getBodyIMURotVelocity_fG2B() {
+        return meas_body_rot_velocity_fG2B;
     }
 
     Rot getBodyKinematicOrientation_fF2B() {
@@ -499,6 +505,7 @@ public:
         #ifndef DEBUG_COMPUTATION // If want to manually feed in orientation data
         bno_imu.operate();
         meas_body_orientation_fG2B = bno_imu.getOrientation();
+        meas_body_rot_velocity_fG2B = bno_imu.getRotVelocity();
         #endif
 
         if (leg_update_timer.timeOut()) {
