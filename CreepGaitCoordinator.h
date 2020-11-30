@@ -5,13 +5,15 @@
 #include "CreepStateInfo.h"
 
 #define LIFT_HEIGHT 30
+#define BODY_DEFAULT_HEIGHT 110
 
-#define STATE_PREPARE_TIME 0.5
-#define STATE_PREPARE_OVERLAP_FACTOR 0.4
+#define STATE_PREPARE_TIME 0.35
+#define STATE_PREPARE_OVERLAP_FACTOR 0.6
 #define STATE_LIFT_TIME 0.1
 #define STATE_LIFT_OVERLAP_FACTOR 0
-#define STATE_PLANT_TIME 0.2
-#define STATE_PLANT_OVERLAP_FACTOR 0.7
+#define STATE_PLANT_TIME 0.15
+#define STATE_PLANT_OVERLAP_FACTOR 0.0
+
 #define STATE_RETURN_TIME 0.25
 #define STATE_RETURN_OVERLAP_FACTOR 0
 
@@ -51,7 +53,7 @@ class CreepGaitCoordinator {
 
     bool overrideFootChoice = false;
     int overridden_foot_to_move = 0;
-    Point default_body_position = Point(0, 0, 100);
+    Point default_body_position = Point(0, 0, BODY_DEFAULT_HEIGHT);
     int step_order[4] = {0, 2, 3, 1};
     int step_order_iterator = 3;
 
@@ -169,7 +171,7 @@ private:
             Point old_body_distance_from_set_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR) - default_body_position);
             body_distance_from_original_centroid = old_body_distance_from_set_centroid - old_body_distance_from_planted_centroid;
             
-            float time = getCurrentCreepState()->getActionPeriod();
+            float time = STATE_PREPARE_TIME;
             dog->moveBodyToPositionFromCentroid(default_body_position, Frame::FLOOR, time);
             dog->moveBodyToOrientation(current_rotation + desired_motion.rotation, time);
             current_rotation += desired_motion.rotation;    
@@ -185,7 +187,7 @@ private:
             Point lift_height = Point(0,0,LIFT_HEIGHT);
             Point next_foot_position_oBfF = (dog->getFootPositionFromBody(foot_to_move, Frame::FLOOR) + lift_height);
             
-            float time = getCurrentCreepState()->getActionPeriod();
+            float time = STATE_LIFT_TIME;
             dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);        
         } else if (mode == NORMAL) {
         
@@ -199,7 +201,7 @@ private:
             Point centroid_position = -dog->getBodyPositionFromCentroid(Frame::FLOOR);
             Point next_foot_position_oBfF = (centroid_position + next_foot_anchor_oC) - body_distance_from_original_centroid;
 
-            float time = getCurrentCreepState()->getActionPeriod();
+            float time = STATE_PLANT_TIME;
             dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);
         } else if (mode == NORMAL) {
         
@@ -209,6 +211,7 @@ private:
         }
     }
 
+    // TODO: incorporate size of support polygon into consideration...dog is tripping over itself
     int chooseFootToMove() {
         if (overrideFootChoice) {
             overrideFootChoice = false;
@@ -238,10 +241,9 @@ private:
 
     void returnCOM(ActionMode mode) {
         if (mode == STARTUP) {
-            Point default_height = Point(0,0,100);
             
-            float time = getCurrentCreepState()->getActionPeriod();
-            dog->moveBodyToPositionFromCentroid(default_height, Frame::FLOOR, time);
+            float time = STATE_RETURN_TIME;
+            dog->moveBodyToPositionFromCentroid(default_body_position, Frame::FLOOR, time);
             dog->moveBodyToOrientation(current_rotation, time);
             current_rotation += desired_motion.rotation;        
         } else if (mode == NORMAL) {
