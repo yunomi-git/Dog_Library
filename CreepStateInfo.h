@@ -33,12 +33,12 @@ public:
         next_state = id;
     }
 
-    void setStarted() {
+    void setStarted() { // "finishStartup?"
         is_in_startup = false;
         state_end_timer.reset();
     }
 
-    void setEnded() {
+    void setEnded() { // "endEarly"?
         time_to_end = true;
     }
 

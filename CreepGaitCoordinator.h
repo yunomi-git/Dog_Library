@@ -7,15 +7,26 @@
 #define LIFT_HEIGHT 30
 #define BODY_DEFAULT_HEIGHT 110
 
-#define STATE_PREPARE_TIME 0.35
-#define STATE_PREPARE_OVERLAP_FACTOR 0.6
+#define STATE_PREPARE_TIME 0.7
+#define STATE_PREPARE_OVERLAP_FACTOR 0
 #define STATE_LIFT_TIME 0.1
 #define STATE_LIFT_OVERLAP_FACTOR 0
 #define STATE_PLANT_TIME 0.15
 #define STATE_PLANT_OVERLAP_FACTOR 0.0
 
-#define STATE_RETURN_TIME 0.25
+#define STATE_RETURN_TIME 0.5
 #define STATE_RETURN_OVERLAP_FACTOR 0
+
+
+// #define STATE_PREPARE_TIME 0.35
+// #define STATE_PREPARE_OVERLAP_FACTOR 0.6
+// #define STATE_LIFT_TIME 0.1
+// #define STATE_LIFT_OVERLAP_FACTOR 0
+// #define STATE_PLANT_TIME 0.15
+// #define STATE_PLANT_OVERLAP_FACTOR 0.0
+
+// #define STATE_RETURN_TIME 0.25
+// #define STATE_RETURN_OVERLAP_FACTOR 0
 
 #define ROTATION_LEG_INPUT_MULTIPLIER 3
 
@@ -50,7 +61,10 @@ class CreepGaitCoordinator {
     Point body_distance_from_original_centroid = POINT_ZERO;
     int foot_to_move = 0;
     Point next_foot_anchor_oC;
+    Point next_foot_position_oBfF;
+    Point current_body_position_goal_oCfF = default_body_position;
 
+    bool move_in_ground_frame = false;
     bool overrideFootChoice = false;
     int overridden_foot_to_move = 0;
     Point default_body_position = Point(0, 0, BODY_DEFAULT_HEIGHT);
@@ -73,6 +87,10 @@ public:
         creep_states[4] = CreepStateInfo(4, STATE_RETURN_TIME);
     }
 
+    void toggleMoveInGroundFrame() {
+        move_in_ground_frame = !move_in_ground_frame;
+    }
+
     void operate() {
         if (getCurrentCreepState()->isInStartup()) {
             doCurrentStateAction(STARTUP);
@@ -80,6 +98,10 @@ public:
         }
         
         doCurrentStateAction(NORMAL);
+
+        if (move_in_ground_frame) {
+            doPIDBalancing();
+        }
         
         if (getCurrentCreepState()->isTimeToEnd()) {
             doCurrentStateAction(END);
@@ -108,10 +130,15 @@ private:
         if (mode == STARTUP) {
   
         } else if (mode == NORMAL) {
-            //body move to desired orientation?
+
         } else {
 
         }
+    }
+
+    void doPIDBalancing() {
+        dog->instantaneouslyAdjustKinematicBodyOrientationGoal(current_rotation + body_orientation_modification);
+        //->instantaneouslyAdjustBodyPositionGoalFromCentroid(current_body_position_goal_oCfF, Frame::GROUND);  
     }
 
 public:
@@ -172,11 +199,20 @@ private:
             body_distance_from_original_centroid = old_body_distance_from_set_centroid - old_body_distance_from_planted_centroid;
             
             float time = STATE_PREPARE_TIME;
-            dog->moveBodyToPositionFromCentroid(default_body_position, Frame::FLOOR, time);
-            dog->moveBodyToOrientation(current_rotation + desired_motion.rotation, time);
-            current_rotation += desired_motion.rotation;    
+            if (move_in_ground_frame) {
+                dog->moveBodyToPositionFromCentroid(default_body_position, Frame::GROUND, time);
+            } else {
+                dog->moveBodyToPositionFromCentroid(default_body_position, Frame::FLOOR, time);
+            }
+            current_rotation += desired_motion.rotation;  
+            dog->moveBodyToOrientation(current_rotation + body_orientation_modification, time);
+            current_body_position_goal_oCfF = default_body_position;
+              
         } else if (mode == NORMAL) {
-        
+             // if (move_in_ground_frame) {
+             //     dog->instantaneouslyAdjustKinematicBodyOrientationGoal(current_rotation + body_orientation_modification);
+             //     dog->instantaneouslyAdjustBodyPositionGoalFromCentroid(current_body_position_goal_oCfF, Frame::GROUND);            
+             // }
         } else {
             getCurrentCreepState()->setNextState(2);
         }
@@ -185,12 +221,17 @@ private:
     void liftFoot(ActionMode mode) {
         if (mode == STARTUP) {
             Point lift_height = Point(0,0,LIFT_HEIGHT);
-            Point next_foot_position_oBfF = (dog->getFootPositionFromBody(foot_to_move, Frame::FLOOR) + lift_height);
+            next_foot_position_oBfF = (dog->getFootPositionFromBody(foot_to_move, Frame::FLOOR) + lift_height);
             
             float time = STATE_LIFT_TIME;
             dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);        
         } else if (mode == NORMAL) {
-        
+            if (move_in_ground_frame) {
+                dog->instantaneouslyAdjustLegPositionGoalFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR);
+
+                // dog->instantaneouslyAdjustKinematicBodyOrientationGoal(current_rotation + body_orientation_modification);
+                // dog->instantaneouslyAdjustBodyPositionGoalFromCentroid(current_body_position_goal_oCfF, Frame::GROUND);
+            }
         } else {
             getCurrentCreepState()->setNextState(3);
         }
@@ -199,14 +240,20 @@ private:
     void plantFoot(ActionMode mode) {
         if (mode == STARTUP) {
             Point centroid_position = -dog->getBodyPositionFromCentroid(Frame::FLOOR);
-            Point next_foot_position_oBfF = (centroid_position + next_foot_anchor_oC) - body_distance_from_original_centroid;
+            next_foot_position_oBfF = (centroid_position + next_foot_anchor_oC) - body_distance_from_original_centroid;
 
             float time = STATE_PLANT_TIME;
             dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);
         } else if (mode == NORMAL) {
-        
+            if (move_in_ground_frame) {
+                dog->instantaneouslyAdjustLegPositionGoalFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR);
+
+                // dog->instantaneouslyAdjustKinematicBodyOrientationGoal(current_rotation + body_orientation_modification);
+                // dog->instantaneouslyAdjustBodyPositionGoalFromCentroid(current_body_position_goal_oCfF, Frame::GROUND);
+            }
         } else {
             dog->switchFootStance(foot_to_move, FootStance::PLANTED);
+            current_body_position_goal_oCfF = dog->getBodyPositionFromCentroid(Frame::FLOOR);
             getCurrentCreepState()->setNextState(0);
         }
     }
@@ -221,7 +268,7 @@ private:
         int foot_to_move = 0;
         for (int i = 0; i < NUM_LEGS; i++) {
             Point current_foot_anchor_fFoC = dog->getFootPositionFromBody(i, Frame::FLOOR) - dog->getCentroidPositionFromBody(Frame::FLOOR);
-            Point next_foot_anchor_if_not_lifted = current_foot_anchor_fFoC - dog->rotateFromFrame(desired_motion.translation, current_rotation + desired_motion.rotation);
+            Point next_foot_anchor_if_not_lifted = current_foot_anchor_fFoC - dog->convertFromFrame(desired_motion.translation, current_rotation + desired_motion.rotation);
             Point lifted_anchor_deviation_from_unlifted = next_foot_anchor_if_not_lifted - calculateNextLiftedFootAnchor_fF(i);
             float distance = lifted_anchor_deviation_from_unlifted.norm();
             if (distance > max_distance) {
@@ -241,13 +288,22 @@ private:
 
     void returnCOM(ActionMode mode) {
         if (mode == STARTUP) {
-            
             float time = STATE_RETURN_TIME;
-            dog->moveBodyToPositionFromCentroid(default_body_position, Frame::FLOOR, time);
-            dog->moveBodyToOrientation(current_rotation, time);
-            current_rotation += desired_motion.rotation;        
+
+            if (move_in_ground_frame) {
+                dog->moveBodyToPositionFromCentroid(default_body_position, Frame::GROUND, time);
+            } else {
+                dog->moveBodyToPositionFromCentroid(default_body_position, Frame::FLOOR, time);
+            }
+            current_rotation += desired_motion.rotation;
+            dog->moveBodyToOrientation(current_rotation + body_orientation_modification, time);
+            current_body_position_goal_oCfF = default_body_position;
+                    
         } else if (mode == NORMAL) {
-        
+            if (move_in_ground_frame) {
+                 // dog->instantaneouslyAdjustKinematicBodyOrientationGoal(current_rotation + body_orientation_modification);
+                 // dog->instantaneouslyAdjustBodyPositionGoalFromCentroid(current_body_position_goal_oCfF, Frame::GROUND);
+            }
         } else {
             getCurrentCreepState()->setNextState(0);
         }

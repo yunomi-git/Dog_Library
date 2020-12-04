@@ -123,7 +123,7 @@ class DogLeg {
     // ==================================================
     Point mounting_pos; // Mounting point relative to body origin IN BODY FRAME
     // $$ Manually Set
-    Point set_foot_position; // Position relative to the shoulder origin. BODY frame 
+    Point set_foot_position_oS; // Position relative to the shoulder origin. BODY frame 
 
 public:
     DogLeg() {}
@@ -151,7 +151,7 @@ public:
         default_foot_position_oS = n_default_position_oB - mounting_pos;
 
         // Accessed
-        set_foot_position = default_foot_position_oS;
+        set_foot_position_oS = default_foot_position_oS;
     }
 
     void setMountingPoint(Point n_mounting_point) {
@@ -255,8 +255,8 @@ public:
 // ====== STATE ACCESSORS =======
 // ========================================
     Point getPosition_oBfB() {
-    	if (!set_foot_position) return POINT_NULL;
-        return set_foot_position + mounting_pos;
+    	if (!set_foot_position_oS) return POINT_NULL;
+        return set_foot_position_oS + mounting_pos;
     }
 
     Point getMountingPoint() {
@@ -293,24 +293,18 @@ public:
         moveToPositionFromShoulder(new_foot_pos - mounting_pos, time); // may not be accurate
     }
 
-    void adjustLegMotionGoal(Point new_foot_pos) {
-    	trajectory_oS.adjustFinalState(new_foot_pos);
-    }
-
-    void adjustLegMotionTime(float time) {
-    	trajectory_oS.adjustFinalTime(time);
+    void instantaneouslyAdjustLegPositionGoalFromBody(Point adjustment_oB) {
+    	Point adjustment_oS = adjustment_oB - mounting_pos;
+        if (trajectory_oS.isActive()) {
+            trajectory_oS.adjustFinalState(adjustment_oS);
+        } else {
+            trajectory_oS.begin(adjustment_oS, TIME_INSTANT);
+        }
     }
 
     void moveToDefaultPosition() {
     	moveToPositionFromShoulder(default_foot_position_oS, TIME_INSTANT);
     }
-
-// Accessors
-    float getLegSpeed() {
-    	float distance_left = (trajectory_oS.getRemainingState(set_foot_position)).norm();
-    	return distance_left/trajectory_oS.getRemainingTime();
-    }
-// 
 
 // ==============================
 // ====== UPDATE =======
@@ -323,8 +317,8 @@ public:
     // @return Whether new signals should be sent to the servos
     void solveMotion() {  
         if (trajectory_oS.isActive()) { 
- 			Point next_set_foot_position = trajectory_oS.getNextState(set_foot_position);
-        	next_foot_kinematics = inverseKinematics(next_set_foot_position);
+ 			Point next_set_foot_position_oS = trajectory_oS.getNextState(set_foot_position_oS);
+        	next_foot_kinematics = inverseKinematics(next_set_foot_position_oS);
         }   
     }
 
@@ -340,7 +334,7 @@ public:
         servo_driver->gotoAngle(elbow_chan, next_foot_kinematics.elbow_angle);
 
         // Set state update
-        set_foot_position = next_foot_kinematics.foot_pos;
+        set_foot_position_oS = next_foot_kinematics.foot_pos;
         // Housekeeping
         next_foot_kinematics.reset();
     }
@@ -405,7 +399,7 @@ public:
        //      // PRINT_POINT("track error: ", tracking_error_fG)
 
        //      // First account for tracking error
-       //      Point candidate_set_foot_position_oCfG = goal_foot_pos_of - tracking_error_fG * 0.0;
+       //      Point candidate_set_foot_position_oS_oCfG = goal_foot_pos_of - tracking_error_fG * 0.0;
 
        //      // Check if trajectory exists (currently in a trajectory)
        //      if (trajectory_f) {
@@ -433,10 +427,10 @@ public:
        //          // PRINT_POINT("trajectory (g): ", trajectory_f)
 
        //          // Account for main trajectory
-       //          candidate_set_foot_position_oCfG -= trajectory_f * (1 - expected_progress);
+       //          candidate_set_foot_position_oS_oCfG -= trajectory_f * (1 - expected_progress);
        //      }
 
        //      // Convert to body frame, from shoulder
-       //      foot_candidate_info.foot_pos = (candidate_set_foot_position_oCfG + (*centroid_oBfG)) * (*body_orientation) - mounting_pos;
+       //      foot_candidate_info.foot_pos = (candidate_set_foot_position_oS_oCfG + (*centroid_oBfG)) * (*body_orientation) - mounting_pos;
        //      // PRINT_POINT("Candidate: ", foot_candidate_info.foot_pos)
        //      return inverseKinematics(foot_candidate_info.foot_pos);
