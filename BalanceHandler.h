@@ -65,13 +65,8 @@ public:
     Rot getNextKinematicBalancingOrientation() {
         Rot balancing_orientation = -(IMU_orientation_error - IMU_rot_velocity * D_gain + error_integrator * I_gain);
 
-        //Serial.print(balancing_orientation.x); Serial.print(" ");
-
         balancing_orientation = limitBalancingOrientationVelocity(balancing_orientation);
         balancing_orientation = limitBalancingOrientationMagnitude(balancing_orientation);
-
-		//Serial.print(balancing_orientation.x); 
-		//Serial.println();
 
         return balancing_orientation;
     }

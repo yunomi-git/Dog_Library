@@ -17,7 +17,6 @@
 // #define DEBUG
 
 // TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// - implement better way to send signals at the same time...not all necessary checks are occuring
 // - clean up code, fix variable names
 // - something is happening with body motion trajectory when rotation is occurring...find out why
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -257,6 +256,7 @@ public:
             return p;
         }
         // Convert appropriately
+        // use new converter?
         if        ((frame_from == Frame::GROUND) && (frame_to == Frame::BODY)) {
             return p / meas_body_orientation_fG2B;
         } else if ((frame_from == Frame::BODY) && (frame_to == Frame::GROUND)) {
@@ -275,11 +275,11 @@ public:
 
 // - Convert frame A to B: p_B = p_A / A2B_orientation
 // - Convert frame B to A: p_A = p_B * A2B_orientation
-    Point rotateToFrame(Point p_in_A, Rot A2B_orientation) {
+    Point convertToFrame(Point p_in_A, Rot A2B_orientation) {
         return p_in_A / A2B_orientation;
     }
 
-    Point rotateFromFrame(Point p_in_B, Rot A2B_orientation) {
+    Point convertFromFrame(Point p_in_B, Rot A2B_orientation) {
         return p_in_B * A2B_orientation;
     }
 
@@ -372,24 +372,26 @@ public:
 
 
 // SPECIAL MOTION COMMANDS
-    void adjustLegMotionGoal(int foot_i, Point new_foot_pos) {
-        foot[foot_i]->adjustLegMotionGoal(new_foot_pos);
+    void instantaneouslyAdjustLegPositionGoalFromBody(int foot_i, Point adjustment_oB, Frame frame) {
+        Point adjustment_oBfB = convertToFrame(adjustment_oB, frame, Frame::BODY);
+        foot[foot_i]->instantaneouslyAdjustLegPositionGoalFromBody(adjustment_oBfB);
     }
 
-    void adjustLegMotionTime(int foot_i, float time) {
-        foot[foot_i]->adjustLegMotionTime(time);
+    void instantaneouslyAdjustKinematicBodyOrientationGoal(Rot adjustment) {
+        if (body_orientation_trajectory_fF2B.isActive()) {
+            body_orientation_trajectory_fF2B.adjustFinalState(adjustment);
+        } else {
+            body_orientation_trajectory_fF2B.begin(adjustment, TIME_INSTANT);
+        }
     }
 
-    void adjustBodyPositionMotionTime(float time) {
-        body_position_trajectory_oCfF.adjustFinalTime(time);
-    }
-
-    void adjustBodyOrientationMotionTime(float time) {
-        body_orientation_trajectory_fF2B.adjustFinalTime(time);
-    }
-
-    void adjustBodyOrientationGoalBy(Rot adjustment) {
-        body_orientation_trajectory_fF2B.setStateAdjustment(adjustment);
+    void instantaneouslyAdjustBodyPositionGoalFromCentroid(Point adjustment_oC, Frame frame) {
+        Point adjustment_oCfF = convertToFrame(adjustment_oC, frame, Frame::FLOOR);
+        if (body_position_trajectory_oCfF.isActive()) {
+            body_position_trajectory_oCfF.adjustFinalState(adjustment_oCfF);
+        } else {
+            body_position_trajectory_oCfF.begin(adjustment_oCfF, TIME_INSTANT);
+        }
     }
 
     // Move to original positions and anchors
@@ -447,7 +449,7 @@ public:
                 }
             }
             centroid_oBfB /= num_planted;
-            return rotateFromFrame(centroid_oBfB, set_body_orientation_fF2B);
+            return convertFromFrame(centroid_oBfB, set_body_orientation_fF2B);
 
         } else {
             doError(2);
@@ -481,7 +483,7 @@ public:
             
             for (int i = 0; i < NUM_LEGS; i++) {
                 if (foot_note[i].isAnchored()) {
-                    Point next_anchor = rotateFromFrame(foot[i]->getPosition_oBfB(), set_body_orientation_fF2B) + set_body_position_oCfF;
+                    Point next_anchor = convertFromFrame(foot[i]->getPosition_oBfB(), set_body_orientation_fF2B) + set_body_position_oCfF;
                     foot_note[i].setAnchorPoint(next_anchor);
                 }
             }
@@ -491,7 +493,7 @@ public:
             //world_centroid_position_oWfF += convertToFrame(centroid_motion_fF, Frame::FLOOR, Frame::GROUND);
         } else if  (old_stance == FootStance::LIFTED) {
             // lift->set or lift->plant
-            Point next_anchor = rotateFromFrame(foot[foot_i]->getPosition_oBfB(), set_body_orientation_fF2B) + set_body_position_oCfF;
+            Point next_anchor = convertFromFrame(foot[foot_i]->getPosition_oBfB(), set_body_orientation_fF2B) + set_body_position_oCfF;
             foot_note[foot_i].setAnchorPoint(next_anchor);
         }
         foot_note[foot_i].switchStance(new_stance);
@@ -548,7 +550,7 @@ public:
     void calculateAndSetAnchoredLegMotions(Point next_body_position_oCfF, Rot next_body_orientation_fF2B) {
         for (int i = 0; i < NUM_LEGS; i++) {
             if (foot_note[i].isAnchored()) {
-                // Is this conversion correct?
+                // use the new converter
                 foot[i]->moveToPositionFromBody((foot_note[i].getAnchorPoint_oCfF() - next_body_position_oCfF) / next_body_orientation_fF2B, TIME_INSTANT);
             }
         }
