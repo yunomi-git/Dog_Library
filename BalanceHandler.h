@@ -5,6 +5,7 @@
 #include "Dog.h"
 #include "Timer.h"
 
+#define DEFAULT_P_GAIN 1
 #define DEFAULT_D_GAIN 0.04
 #define DEFAULT_I_GAIN 0.015
 
@@ -28,6 +29,7 @@ class BalanceHandler {
     Rot limiting_balance_velocity = Rot(MAX_ROTATIONAL_VEL, MAX_ROTATIONAL_VEL, MAX_ROTATIONAL_VEL);
     Rot limiting_balance_magnitude = Rot(MAX_X_ORIENT, MAX_Y_ORIENT, MAX_Z_ORIENT);
 
+    float P_gain;
     float I_gain;
     float D_gain;
 
@@ -37,12 +39,14 @@ public:
     BalanceHandler() = default;
     BalanceHandler(RobotDog *n_dog) {
         dog = n_dog;
+        P_gain = DEFAULT_P_GAIN;
         I_gain = DEFAULT_I_GAIN;
         D_gain = DEFAULT_D_GAIN;
         measurement_update_timer.reset(measurement_interval);
     }
 
-    void setIDGains(float n_I_gain, float n_D_gain) {
+    void setPIDGains(float n_P_gain, float n_I_gain, float n_D_gain) {
+    	P_gain = n_P_gain;
         I_gain = n_I_gain;
         D_gain = n_D_gain;
     }
@@ -63,9 +67,11 @@ public:
     }
 
     Rot getNextKinematicBalancingOrientation() {
-        Rot balancing_orientation = -(IMU_orientation_error - IMU_rot_velocity * D_gain + error_integrator * I_gain);
+        Rot balancing_orientation = -(  IMU_orientation_error * P_gain 
+        							  - IMU_rot_velocity * D_gain 
+        							  + error_integrator * I_gain);
 
-        balancing_orientation = limitBalancingOrientationVelocity(balancing_orientation);
+        //balancing_orientation = limitBalancingOrientationVelocity(balancing_orientation);
         balancing_orientation = limitBalancingOrientationMagnitude(balancing_orientation);
 
         return balancing_orientation;
@@ -78,6 +84,10 @@ public:
     void setBalancingMagnitudeLimits(Rot magnitude_limit) {
     	limiting_balance_magnitude = magnitude_limit;
     }
+
+    void resetIntegrator() {
+    	error_integrator = ROT_ZERO;
+    }
 private:
     Rot limitBalancingOrientationVelocity(Rot balancing_orientation) {
     	Rot kine_orientation = dog->getBodyKinematicOrientation_fF2B();
@@ -85,13 +95,6 @@ private:
 
     	balancing_difference = limitOrientation(balancing_difference, limiting_balance_velocity);
     	return kine_orientation + balancing_difference;
-
-        // float difference_magnitude = (kine_orientation - balancing_orientation).norm();
-        // ///Serial.println(difference_magnitude);
-        // if (difference_magnitude > MAX_ROTATIONAL_VEL) {
-        // 	Rot d_orientation = (balancing_orientation - kine_orientation) / difference_magnitude * MAX_ROTATIONAL_VEL;
-        // 	balancing_orientation = (kine_orientation + d_orientation); 
-        // }
     }
 
     Rot limitBalancingOrientationMagnitude(Rot balancing_orientation) {

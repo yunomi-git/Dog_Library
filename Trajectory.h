@@ -2,92 +2,93 @@
 #define __TRAJECTORY__
 #include "Timer.h"
 
+#define INFINITE_SPEED 10000
+
 template <class State>
 class TrajectoryInfo {
         bool is_active;
-
         Timer timer;
-        float prev_time;
-        
-        float final_time;
-        State final_state;
 
-      //  State state_adjustment;
+        float speed;
+        State goal_state;
 
 public:
         TrajectoryInfo() {
             is_active = false;
         }
 
-        void begin(State nfinal_state, float nfinal_time) {
-            is_active = true;
+        TrajectoryInfo(State beginning_state) {
+            is_active = false;
+            speed = INFINITE_SPEED;
+            goal_state = beginning_state;
             timer.reset();
-            prev_time = 0;
-            final_time = nfinal_time;
-            final_state = nfinal_state;
-            //state_adjustment = State{};
         }
 
-        // void setStateAdjustment(State n_state_adjustment) {
-        //   //  if (is_active) 
-        //         state_adjustment = n_state_adjustment;
-        // }
+        void setSpeed(float n_speed) {
+            speed = n_speed;
+        }
+
+        void startGoal(State n_goal) {
+            timer.reset();// thus thing...
+            goal_state = n_goal;
+            is_active = true;
+        }
+
+        void updateGoal(State n_goal) {
+            goal_state = n_goal;
+            is_active = true;
+        }
 
         State getNextState(State current_state) {
-            if (!isActive()) {
+            float dt = timer.dt();
+            timer.reset();
+
+            if (!is_active) {
                 return current_state;
+            }
+
+            if (speed == INFINITE_SPEED) {
+                return goal_state;
             } else {
-                State next_state;
-                float current_time = getCurrentTime();
-                //current_state = current_state - state_adjustment;
+                float maximum_distance_moved = speed * dt;
+                float distance_to_goal = getDistanceToGoal(current_state);
 
-                if (current_time < final_time) {
-                    float scaling_factor = (current_time - prev_time) / (final_time - prev_time); 
-                    next_state = current_state  + (final_state - current_state) * scaling_factor;
-                    prev_time = current_time;
+                if (distance_to_goal > maximum_distance_moved) {
+                    State direction_to_goal = getDirectionToGoal(current_state);
+                    return current_state + direction_to_goal * maximum_distance_moved;
                 } else {
-                    next_state = final_state;
                     end();
+                    return goal_state;
                 }
-
-                next_state = next_state;// + state_adjustment;
-                return next_state;
             }
         }
 
-        void end() {
-            final_time = 0;
-            is_active = false;
+        void syncTimer() {
+            timer.reset();
         }
 
-        bool isActive() {
+
+
+private:
+        float getDistanceToGoal(State current_state) {
+            return (goal_state - current_state).norm();
+        }
+
+        State getDirectionToGoal(State current_state) {
+            return (goal_state - current_state)/getDistanceToGoal(current_state);
+        }
+
+public:
+        bool hasReachedGoal() {
+            return !is_active;;
+        }
+
+        bool isInMotion() {
             return is_active;
         }
 
-        void adjustFinalTime(float n_final_time) {
-            if (is_active)
-                final_time = n_final_time;
-        }
-
-        void adjustFinalState(State n_final_state) {
-            if (is_active)
-                final_state = n_final_state;
-        }
-
-        State getRemainingState(State current_state) {
-            return final_state - current_state;
-        }
-
-        float getRemainingTime() {
-            return final_time - timer.dt();
-        }
-
-        // returns time in seconds
-        float getCurrentTime() {
-            if (is_active)
-                return timer.dt();
-            else
-                return 0;
+        void end() {
+            is_active = false;
         }
     };
 
