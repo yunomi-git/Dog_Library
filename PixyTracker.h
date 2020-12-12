@@ -7,6 +7,8 @@
 
 // tracks a single object saved to the red light (sig 1)
 #define DEFAULT_TRACKING_SIG 1
+#define PIXY_CAMERA_W_PIX 316
+#define PIXY_CAMERA_H_PIX 208
 
 struct TrackedObjectDynamics {
 	Point position;
@@ -45,6 +47,10 @@ public:
 
 	TrackedObjectDynamics getObjectDynamics() {
 		return tracked_object;
+	}
+
+	PixyObject getPixyObject() {
+		return tracked_pixy_object;
 	}
 
 	void operate() {
@@ -130,7 +136,9 @@ private:
 		int raw_y = pixy->ccc.blocks[block_index].m_y;
 		int w = pixy->ccc.blocks[block_index].m_width;
 		int h = pixy->ccc.blocks[block_index].m_height;
-		int area;
+
+		raw_x -= PIXY_CAMERA_W_PIX/2.0;
+		raw_y -= PIXY_CAMERA_H_PIX/2.0;
 
 		if (h >= w) {
 			processed_block.area = h * h;
