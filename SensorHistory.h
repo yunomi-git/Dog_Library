@@ -12,7 +12,7 @@ public:
     SensorHistory() {history_size = MAX_HISTORY_SIZE;}
 
     SensorHistory(int size) {
-        if (size < MAX_HISTORY_SIZE) {
+        if (size > MAX_HISTORY_SIZE) {
             history_size = MAX_HISTORY_SIZE;
         } else {
             history_size = size;

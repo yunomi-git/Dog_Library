@@ -14,13 +14,6 @@
 #include "Enumerations.h"
 #include "FootNote.h"
 
-// #define DEBUG
-
-// TODO: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// - clean up code, fix variable names
-// - something is happening with body motion trajectory when rotation is occurring...find out why
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 // USAGE DETAILS
 // Nomenclature:
 //  - Foot is used interchangeably with Leg. Foot is generally used to refer to the contact point.

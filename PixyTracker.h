@@ -10,6 +10,9 @@
 #define PIXY_CAMERA_W_PIX 316
 #define PIXY_CAMERA_H_PIX 208
 
+#define OBJECT_SIDE_LENGTH 35 //mm
+#define FOCAL_LENGTH 282.66 // px
+
 struct TrackedObjectDynamics {
 	Point position;
 	Point velocity;
@@ -59,10 +62,8 @@ public:
 		pixy->ccc.getBlocks();
 
 		if (pixy->ccc.numBlocks > 0) {
-			int object_index = 0;
-			if (pixy->ccc.numBlocks > 1) { 
-				object_index = filterSingleBlock();
-			}
+			int object_index = filterSingleBlock();
+
 			if (object_index == -1) {
 				tracked_object.detection_occurred = false;
 				return;
@@ -89,6 +90,8 @@ private:
 	bool previouslyDidNotDetectObject() {
 		return !tracked_object.detection_occurred;
 	}
+
+	// correct signature
 	// 1. correct age
 	// 2. closest area
 	int filterSingleBlock() {
@@ -102,30 +105,16 @@ private:
 				expected_age = 255;
 			}
 		}
-		int expected_area = tracked_pixy_object.area;
 
 		int best_index = -1;
 		int min_age_difference = 255;
-		int min_area_difference;
 		for (int i = 0; i < pixy->ccc.numBlocks; i++) {
 			PixyObject candidate_pixy_object = processPixyBlock(i);
 			int age_difference = abs(candidate_pixy_object.age - expected_age);
-			if (age_difference > min_age_difference) {
+			if (age_difference < min_age_difference) {
 				min_age_difference = age_difference;
 				best_index = i;
 			}
-			// if (candidate_pixy_object.age == expected_age) {
-			// 	if (best_index == -1) {
-			// 		best_index = i;
-			// 		min_area_difference = abs(candidate_pixy_object.area - expected_area);
-			// 	} else {
-			// 		int area_difference = abs(candidate_pixy_object.area - expected_area);
-			// 		if (area_difference < min_area_difference) {
-			// 			best_index = i;
-			// 			min_area_difference = area_difference;
-			// 		}
-			// 	}
-			// }
 		}
 		return best_index;
 	}
@@ -156,8 +145,20 @@ private:
 
 	Point convertPixyBlockToPoint(int block_index) {
 		PixyObject pixy_object = processPixyBlock(block_index);
+		float world_x;
+		float world_y;
+		float world_z;
 
-		return POINT_ZERO;
+		world_z = convertAreaToDepth(pixy_object.area);
+		world_x = - pixy_object.x * world_z/FOCAL_LENGTH;
+		world_y = - pixy_object.y * world_z/FOCAL_LENGTH;
+
+		return Point(world_x, world_y, world_z);
+	}
+
+	float convertAreaToDepth(float area) {
+		float meas_side_length = sqrt(area); // px 
+		return FOCAL_LENGTH * OBJECT_SIDE_LENGTH / meas_side_length;
 	}
 
 	//#ifdef DEBUG
@@ -189,4 +190,44 @@ public:
 	// 		Point candidate_position = convertPixyBlockToPoint(i);
 
 	// 	}
+	// }
+
+
+	// int filterSingleBlock() {
+	// 	int expected_age;
+	// 	if (previouslyDidNotDetectObject()) {
+	// 		expected_age = 0;
+	// 	}
+	// 	else {
+	// 		expected_age = tracked_pixy_object.age + 1;
+	// 		if (expected_age > 255) {
+	// 			expected_age = 255;
+	// 		}
+	// 	}
+	// 	//int expected_area = tracked_pixy_object.area;
+
+	// 	int best_index = -1;
+	// 	int min_age_difference = 255;
+	// 	//int min_area_difference;
+	// 	for (int i = 0; i < pixy->ccc.numBlocks; i++) {
+	// 		PixyObject candidate_pixy_object = processPixyBlock(i);
+	// 		int age_difference = abs(candidate_pixy_object.age - expected_age);
+	// 		if (age_difference > min_age_difference) {
+	// 			min_age_difference = age_difference;
+	// 			best_index = i;
+	// 		}
+	// 		// if (candidate_pixy_object.age == expected_age) {
+	// 		// 	if (best_index == -1) {
+	// 		// 		best_index = i;
+	// 		// 		min_area_difference = abs(candidate_pixy_object.area - expected_area);
+	// 		// 	} else {
+	// 		// 		int area_difference = abs(candidate_pixy_object.area - expected_area);
+	// 		// 		if (area_difference < min_area_difference) {
+	// 		// 			best_index = i;
+	// 		// 			min_area_difference = area_difference;
+	// 		// 		}
+	// 		// 	}
+	// 		// }
+	// 	}
+	// 	return best_index;
 	// }

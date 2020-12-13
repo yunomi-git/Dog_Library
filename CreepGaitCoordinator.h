@@ -7,28 +7,31 @@
 #define LIFT_HEIGHT 30
 #define BODY_DEFAULT_HEIGHT 110
 
-#define STATE_PREPARE_TIME 0.7
-#define STATE_PREPARE_OVERLAP_FACTOR 0
+
+// #ifdef FAST_CREEP
+#define STATE_PREPARE_TIME 0.35
+#define STATE_PREPARE_OVERLAP_FACTOR 0.6
 #define STATE_LIFT_TIME 0.1
 #define STATE_LIFT_OVERLAP_FACTOR 0
 #define STATE_PLANT_TIME 0.15
 #define STATE_PLANT_OVERLAP_FACTOR 0.0
 
-#define STATE_RETURN_TIME 0.5
+#define STATE_RETURN_TIME 0.25
 #define STATE_RETURN_OVERLAP_FACTOR 0
 
-// #define STATE_PREPARE_TIME 0.35
-// #define STATE_PREPARE_OVERLAP_FACTOR 0.6
+// #else
+// #define STATE_PREPARE_TIME 0.7
+// #define STATE_PREPARE_OVERLAP_FACTOR 0
 // #define STATE_LIFT_TIME 0.1
 // #define STATE_LIFT_OVERLAP_FACTOR 0
 // #define STATE_PLANT_TIME 0.15
 // #define STATE_PLANT_OVERLAP_FACTOR 0.0
 
-// #define STATE_RETURN_TIME 0.25
+// #define STATE_RETURN_TIME 0.5
 // #define STATE_RETURN_OVERLAP_FACTOR 0
+// #endif
 
 #define ROTATION_LEG_INPUT_MULTIPLIER 3
-
 
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object)->*(ptrToMember))
 
@@ -64,6 +67,7 @@ class CreepGaitCoordinator {
     Point next_foot_position_oBfF;
     Point current_body_position_goal_oCfF = default_body_position;
 
+    bool tracking_external_orientation = false;
     bool move_in_ground_frame = false;
     bool overrideFootChoice = false;
     int overridden_foot_to_move = 0;
@@ -97,10 +101,10 @@ public:
         
         doCurrentStateAction(NORMAL);
 
-        if (move_in_ground_frame) {
-            doPIDBalancing();
+        if (tracking_external_orientation) {
+            trackExternalOrientation();
         }
-        
+
         if (getCurrentCreepState()->isTimeToEnd()) {
             doCurrentStateAction(END);
             int next_state = getCurrentCreepState()->getNextState(); 
@@ -116,16 +120,14 @@ private:
 
     void doCurrentStateAction(ActionMode mode) {
         CALL_MEMBER_FN(this, actions[state])(mode);
-        //(*actions[state])(mode);
     }
 
     void switchToState(int n_state) {
         state = n_state;
     }
 
-    void doPIDBalancing() {
+    void trackExternalOrientation() {
         dog->moveBodyToOrientationAtSpeed(current_rotation + body_orientation_modification, 20);
-        //dog->moveBodyToPositionFromCentroidAtSpeed(current_body_position_goal_oCfF, Frame::GROUND, DEFAULT_BODY_TRANSLATION_SPEED);
         dog->moveBodyToPositionFromCentroid(current_body_position_goal_oCfF, Frame::GROUND);    
     }
 
@@ -180,7 +182,7 @@ private:
             dog->switchFootStance(foot_to_move, FootStance::LIFTED);
             dog->moveFootToPositionFromBodyInTime(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);        
         } else if (mode == NORMAL) {
-            if (move_in_ground_frame) {
+            if (tracking_external_orientation) {
                 dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR);
             }
         } else {
@@ -196,14 +198,14 @@ private:
             float time = STATE_PLANT_TIME;
             dog->moveFootToPositionFromBodyInTime(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);
         } else if (mode == NORMAL) {
-            if (move_in_ground_frame) {
+            if (tracking_external_orientation) {
                 dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR);
             }
         } else {
             dog->switchFootStance(foot_to_move, FootStance::PLANTED);
             current_body_position_goal_oCfF = dog->getBodyPositionFromCentroid(Frame::FLOOR);
             getCurrentCreepState()->setNextState(0);
-            if (move_in_ground_frame) {
+            if (tracking_external_orientation) {
                 current_rotation += desired_motion.rotation; 
             }
         }
@@ -293,7 +295,11 @@ public:
         body_orientation_modification = orientation_modification;
     }
 
-    void toggleMoveInGroundFrame() {
+    void toggleFollowExternalOrientation() {
+        tracking_external_orientation = !tracking_external_orientation;
+    }
+
+    void toggleMotionInGroundFrame() {
         move_in_ground_frame = !move_in_ground_frame;
     }
 
@@ -301,7 +307,7 @@ public:
         return (state == 0);
     }
 
-    Rot getCurrentOrientation() {
+    Rot getCurrentRotation() {
         return current_rotation;
     }
 };
