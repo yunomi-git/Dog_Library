@@ -12,7 +12,7 @@
 
 
 struct IMU {
-    #define MAX_HISTORY_SIZE 15
+    #define HISTORY_SIZE 15
     
     enum collection_mode {SINGLE, CONTINUOUS};
 
@@ -26,11 +26,11 @@ struct IMU {
     // Point orientation_signs;  // For customization of axes
     template<typename T> struct sensor_history_info {
         T value;
-        T value_history[MAX_HISTORY_SIZE];
+        T value_history[HISTORY_SIZE];
         int history_size;
         int index = 0;
 
-        sensor_history_info() {history_size = MAX_HISTORY_SIZE;}
+        sensor_history_info() {history_size = HISTORY_SIZE;}
 
         sensor_history_info(int size) {history_size = size;}
 
@@ -98,10 +98,6 @@ public:
         bno.setExtCrystalUse(true);
 
         raw_orientation = ROT_ZERO;
-
-        // Wait for startup
-        delay(2000);
-        // timer = millis();
     }
 
     void tareOrientation(int n = 10) {

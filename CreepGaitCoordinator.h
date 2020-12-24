@@ -3,10 +3,24 @@
 
 #include "Dog.h"
 #include "CreepStateInfo.h"
+#include "Triangle.h"
 
 #define LIFT_HEIGHT 30
 #define BODY_DEFAULT_HEIGHT 110
 
+
+#ifdef FAST_CREEP
+#define STATE_PREPARE_TIME 0.35
+#define STATE_PREPARE_OVERLAP_FACTOR 0.6
+#define STATE_LIFT_TIME 0.1
+#define STATE_LIFT_OVERLAP_FACTOR 0
+#define STATE_PLANT_TIME 0.15
+#define STATE_PLANT_OVERLAP_FACTOR 0.0
+
+#define STATE_RETURN_TIME 0.25
+#define STATE_RETURN_OVERLAP_FACTOR 0
+
+#else
 #define STATE_PREPARE_TIME 0.7
 #define STATE_PREPARE_OVERLAP_FACTOR 0
 #define STATE_LIFT_TIME 0.1
@@ -16,21 +30,18 @@
 
 #define STATE_RETURN_TIME 0.5
 #define STATE_RETURN_OVERLAP_FACTOR 0
-
-// #define STATE_PREPARE_TIME 0.35
-// #define STATE_PREPARE_OVERLAP_FACTOR 0.6
-// #define STATE_LIFT_TIME 0.1
-// #define STATE_LIFT_OVERLAP_FACTOR 0
-// #define STATE_PLANT_TIME 0.15
-// #define STATE_PLANT_OVERLAP_FACTOR 0.0
-
-// #define STATE_RETURN_TIME 0.25
-// #define STATE_RETURN_OVERLAP_FACTOR 0
+#endif
 
 #define ROTATION_LEG_INPUT_MULTIPLIER 3
 
-
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object)->*(ptrToMember))
+
+#define DEFAULT_INSCRIBED_CIRCLE_AREA 8439.56
+#define MAX_LOST_LEG_DISTANCE 100
+
+#define LOST_DISTANCE_WEIGHT 1
+#define NEXT_AREA_WEIGHT 0.5
+#define CURR_AREA_WEIGHT 1
 
 class CreepGaitCoordinator {
     enum ActionMode {STARTUP, NORMAL, END};
@@ -64,6 +75,7 @@ class CreepGaitCoordinator {
     Point next_foot_position_oBfF;
     Point current_body_position_goal_oCfF = default_body_position;
 
+    bool tracking_external_orientation = false;
     bool move_in_ground_frame = false;
     bool overrideFootChoice = false;
     int overridden_foot_to_move = 0;
@@ -97,10 +109,10 @@ public:
         
         doCurrentStateAction(NORMAL);
 
-        if (move_in_ground_frame) {
-            doPIDBalancing();
+        if (tracking_external_orientation) {
+            trackExternalOrientation();
         }
-        
+
         if (getCurrentCreepState()->isTimeToEnd()) {
             doCurrentStateAction(END);
             int next_state = getCurrentCreepState()->getNextState(); 
@@ -116,16 +128,14 @@ private:
 
     void doCurrentStateAction(ActionMode mode) {
         CALL_MEMBER_FN(this, actions[state])(mode);
-        //(*actions[state])(mode);
     }
 
     void switchToState(int n_state) {
         state = n_state;
     }
 
-    void doPIDBalancing() {
+    void trackExternalOrientation() {
         dog->moveBodyToOrientationAtSpeed(current_rotation + body_orientation_modification, 20);
-        //dog->moveBodyToPositionFromCentroidAtSpeed(current_body_position_goal_oCfF, Frame::GROUND, DEFAULT_BODY_TRANSLATION_SPEED);
         dog->moveBodyToPositionFromCentroid(current_body_position_goal_oCfF, Frame::GROUND);    
     }
 
@@ -145,14 +155,13 @@ private:
             Point old_body_distance_from_planted_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR) - default_body_position);;
             
             foot_to_move = chooseFootToMove();
-            next_foot_anchor_oC = calculateNextLiftedFootAnchor_fF(foot_to_move);
+            next_foot_anchor_oC = calculateNextLiftedFootAnchor_fFoC(foot_to_move);
             
             dog->switchFootStance(foot_to_move, FootStance::SET);
 
             Point old_body_distance_from_set_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR) - default_body_position);
             body_distance_from_original_centroid = old_body_distance_from_set_centroid - old_body_distance_from_planted_centroid;
             
-             
             current_body_position_goal_oCfF = default_body_position;
 
             float time = STATE_PREPARE_TIME;
@@ -180,7 +189,7 @@ private:
             dog->switchFootStance(foot_to_move, FootStance::LIFTED);
             dog->moveFootToPositionFromBodyInTime(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);        
         } else if (mode == NORMAL) {
-            if (move_in_ground_frame) {
+            if (tracking_external_orientation) {
                 dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR);
             }
         } else {
@@ -196,45 +205,115 @@ private:
             float time = STATE_PLANT_TIME;
             dog->moveFootToPositionFromBodyInTime(foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);
         } else if (mode == NORMAL) {
-            if (move_in_ground_frame) {
+            if (tracking_external_orientation) {
                 dog->moveFootToPositionFromBody(foot_to_move, next_foot_position_oBfF, Frame::FLOOR);
             }
         } else {
             dog->switchFootStance(foot_to_move, FootStance::PLANTED);
             current_body_position_goal_oCfF = dog->getBodyPositionFromCentroid(Frame::FLOOR);
             getCurrentCreepState()->setNextState(0);
-            if (move_in_ground_frame) {
+            if (tracking_external_orientation) {
                 current_rotation += desired_motion.rotation; 
             }
         }
     }
 
     // TODO: incorporate size of support polygon into consideration...dog is tripping over itself
+    // deviation from original polygon size?
+    // negatively penalize a negative foot area?
+    // maximize next 3-foot area combinations
     int chooseFootToMove() {
         if (overrideFootChoice) {
             overrideFootChoice = false;
             return overridden_foot_to_move;
         }
-        float max_distance = 0;
+
+        float max_move_score = 0;
         int foot_to_move = 0;
         for (int i = 0; i < NUM_LEGS; i++) {
-            Point current_foot_anchor_fFoC = dog->getFootPositionFromBody(i, Frame::FLOOR) - dog->getCentroidPositionFromBody(Frame::FLOOR);
-            Point next_foot_anchor_if_not_lifted = current_foot_anchor_fFoC - dog->convertFromFrame(desired_motion.translation, current_rotation + desired_motion.rotation);
-            Point lifted_anchor_deviation_from_unlifted = next_foot_anchor_if_not_lifted - calculateNextLiftedFootAnchor_fF(i);
-            float distance = lifted_anchor_deviation_from_unlifted.norm();
-            if (distance > max_distance) {
+            float move_score = calculateFootLiftChoiceScore(i);
+            if (move_score > max_move_score) {
                foot_to_move = i;
-               max_distance = distance;
+               max_move_score = move_score;
             }
         }
        return foot_to_move;
-        // step_order_iterator = (step_order_iterator + 1)%4;
-        // return step_order[step_order_iterator];
     }
 
-    Point calculateNextLiftedFootAnchor_fF(int foot_i) {
+    float calculateFootLiftChoiceScore(int foot_i) {
+        float lost_distance_from_not_moving;
+        Point current_anchor_fFoC = dog->getFootPositionFromBody(foot_i, Frame::FLOOR) - dog->getCentroidPositionFromBody(Frame::FLOOR);
+        Point next_anchor_fFoC = calculateNextLiftedFootAnchor_fFoC(foot_i);
+        lost_distance_from_not_moving = (next_anchor_fFoC - current_anchor_fFoC).norm();
+        float normalized_lost_distance = lost_distance_from_not_moving/MAX_LOST_LEG_DISTANCE;
+        if (normalized_lost_distance > 1) {
+            normalized_lost_distance *= 3;
+        }
+
+        Triangle all_support_polygons[4];
+        getSupportPolygonsAfterFootMotion(all_support_polygons, foot_i);
+        float min_next_inscribed_circle_area;
+        Triangle support_poly_with_footi[NUM_LEGS - 1] = {all_support_polygons[0], all_support_polygons[1], all_support_polygons[2]};
+        min_next_inscribed_circle_area = TriangleSet::getMinimumInscribedCircleArea(support_poly_with_footi, NUM_LEGS - 1);
+        float normalized_next_circle_area = min_next_inscribed_circle_area/(DEFAULT_INSCRIBED_CIRCLE_AREA * 1.5);
+        if (normalized_next_circle_area > 1) {
+            normalized_next_circle_area = 1;
+        }
+
+        float supporting_inscribed_circle_area;
+        Triangle support_poly_without_footi = all_support_polygons[3];
+        supporting_inscribed_circle_area = Triangle::getInscribedCircleArea(support_poly_without_footi);
+        float normalized_support_circle_area = supporting_inscribed_circle_area/DEFAULT_INSCRIBED_CIRCLE_AREA;
+        if (normalized_support_circle_area > 1) {
+            normalized_support_circle_area = 1;
+        }
+
+        float score = LOST_DISTANCE_WEIGHT * normalized_lost_distance + // larger distance is higher priority
+                      NEXT_AREA_WEIGHT     * normalized_next_circle_area +  // smaller area is lower priority
+                      CURR_AREA_WEIGHT     * normalized_support_circle_area; // larger area is higher priority
+
+#ifdef DEBUG
+        Serial.print(foot_i); Serial.print(": "); 
+        Serial.print("dist: "); Serial.print(normalized_lost_distance);
+        Serial.print(", min: "); Serial.print(normalized_next_circle_area);
+        Serial.print(", curr: "); Serial.print(normalized_support_circle_area);
+        Serial.print(" score: "); Serial.print(score);
+        Serial.println();
+#endif
+        return score;
+    }
+
+    // from CURRENT centroid
+    Point calculateNextLiftedFootAnchor_fFoC(int foot_i) {
         Point default_anchor = dog->getDefaultFootPosition(foot_i, Frame::BODY) + Point(0, 0, dog->getStartingHeight());
         return (default_anchor + desired_motion.translation) * (current_rotation + desired_motion.leg_rotation); // body frame movement
+    }
+
+    // places a list of 4 into support_polygons
+    // polygon that does not include foot_i is the last
+    void getSupportPolygonsAfterFootMotion(Triangle *support_polygons, int foot_i) {
+        Point foot_positions[NUM_LEGS];
+        for (int i = 0; i < NUM_LEGS; i++) {
+            if (i == foot_i) {
+                foot_positions[i] = calculateNextLiftedFootAnchor_fFoC(i);
+            } else {
+                foot_positions[i] = dog->getAnchorPoint_oC(i, Frame::FLOOR); 
+            }
+        }
+
+        int poly_without_footi_counted = 0;
+        for (int f1 = 0; f1 < NUM_LEGS - 2; f1++) {
+            for (int f2 = f1 + 1; f2 < NUM_LEGS - 1; f2++) {
+                for (int f3 = f2 + 1; f3 < NUM_LEGS; f3++) {
+                    if ((f1 != foot_i) && (f2 != foot_i) && (f3 != foot_i)) {
+                        support_polygons[NUM_LEGS - 1] = Triangle(foot_positions[f1], foot_positions[f2], foot_positions[f3]);
+                    } else {
+                        support_polygons[poly_without_footi_counted] = Triangle(foot_positions[f1], foot_positions[f2], foot_positions[f3]);
+                        poly_without_footi_counted++;
+                    }
+                }
+            }
+        }
     }
 
     void returnCOM(ActionMode mode) {
@@ -293,7 +372,11 @@ public:
         body_orientation_modification = orientation_modification;
     }
 
-    void toggleMoveInGroundFrame() {
+    void toggleFollowExternalOrientation() {
+        tracking_external_orientation = !tracking_external_orientation;
+    }
+
+    void toggleMotionInGroundFrame() {
         move_in_ground_frame = !move_in_ground_frame;
     }
 
@@ -301,7 +384,7 @@ public:
         return (state == 0);
     }
 
-    Rot getCurrentOrientation() {
+    Rot getCurrentRotation() {
         return current_rotation;
     }
 };
