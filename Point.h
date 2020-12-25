@@ -56,6 +56,10 @@ public:
        return !(p==*this);
     }
 
+    float operator*(Point p) {
+        return (x * p.x + y * p.y + z * p.z);
+    }
+
     // Rot
     // r a rotational state in degrees
     Point operator*(Rot r) {
