@@ -212,7 +212,7 @@ private:
             dog->switchFootStance(foot_to_move, FootStance::PLANTED);
             current_body_position_goal_oCfF = dog->getBodyPositionFromCentroid(Frame::FLOOR);
             getCurrentCreepState()->setNextState(0);
-            if (tracking_external_orientation) {
+            if (move_in_ground_frame) {
                 current_rotation += desired_motion.rotation; 
             }
         }
