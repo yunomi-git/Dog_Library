@@ -642,16 +642,21 @@ public:
     }
 
 
-    // void printIMU() {
-    //     Serial.print("IMU: "); (bno_imu.getOrientation()).print();
-    // }
+    void printIMU() {
+        Serial.print("IMU: "); (bno_imu.getOrientation()).print();
+    }
 
-    // void printLegs() {
-    //     for (int i = 0; i < NUM_LEGS; i++) {
-    //         Point foot_pos_G = foot[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
-    //         Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
-    //     }
-    // }
+    void printOrientation() {
+        Serial.print("Kine Orientation: "); (set_body_orientation_fF2B).print();
+    }
+    
+
+    void printLegs() {
+        for (int i = 0; i < NUM_LEGS; i++) {
+            Point foot_pos = getFootPositionFromBody(i, Frame::BODY);
+            Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos.print();
+        }
+    }
 
     // void printLegsFromBody() {
     //     for (int i = 0; i < NUM_LEGS; i++) {

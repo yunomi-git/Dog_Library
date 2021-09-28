@@ -94,7 +94,7 @@ public:
 	void gotoOFF() {
 		gotoAngle(angle_off);
 	}
-
+private:
 	// Converters
 	int angleToPwm(float angle) {
 		return round(pwm_min + (angle - angle_min) * (pwm_max - pwm_min) / (angle_max - angle_min));
