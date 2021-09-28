@@ -9,7 +9,7 @@ class CreepStateInfo {
     float motion_period;
     float state_period;
 
-    Timer state_periodr;
+    Timer state_period_timer;
     bool is_in_startup;
     bool time_to_end;
     int next_state;
@@ -21,7 +21,7 @@ public:
         state_period = nstate_period;
         motion_period = nmotion_period;
         if (state_period != TIME_INFINITE) {
-            state_periodr.reset(state_period * 1.05);
+            state_period_timer.reset(state_period * 1.05);
         }
         id = n_id;
         is_in_startup = true;
@@ -37,7 +37,7 @@ public:
 
     void setStarted() { // "finishStartup?"
         is_in_startup = false;
-        state_periodr.reset();
+        state_period_timer.reset();
     }
 
     void setEnded() { // "endEarly"?
@@ -61,7 +61,7 @@ public:
     }
 
     bool isTimeToEnd() {
-        return (state_period != TIME_INFINITE && state_periodr.timeOut()) || time_to_end;
+        return (state_period != TIME_INFINITE && state_period_timer.timeOut()) || time_to_end;
     }
 
 
