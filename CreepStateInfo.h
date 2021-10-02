@@ -17,9 +17,8 @@ class CreepStateInfo {
 public:
     CreepStateInfo() = default;
 
-    CreepStateInfo(int n_id, float nmotion_period, float nstate_period) {
+    CreepStateInfo(int n_id, float nstate_period) {
         state_period = nstate_period;
-        motion_period = nmotion_period;
         if (state_period != TIME_INFINITE) {
             state_period_timer.reset(state_period * 1.05);
         }
