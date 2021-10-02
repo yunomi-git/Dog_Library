@@ -40,7 +40,7 @@ public:
         state_period_timer.reset();
     }
 
-    void setEnded() { // "endEarly"?
+    void endEarly() {
         time_to_end = true;
     }
 
