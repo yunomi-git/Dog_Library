@@ -215,6 +215,7 @@ public:
             desired_motion.translation = Point(x_motion, y_motion, 0);
             desired_motion.rotation = Rot(0, 0, yaw_motion);
             desired_motion.leg_rotation = desired_motion.rotation * ROTATION_LEG_INPUT_MULTIPLIER;
+            desired_motion.current_rotation = current_rotation;
 
             getCurrentCreepState()->endEarly();
             getCurrentCreepState()->setNextState(1);
