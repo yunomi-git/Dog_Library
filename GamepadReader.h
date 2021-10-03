@@ -10,10 +10,6 @@ struct JoystickValues {
     float ry;
     float lx;
     float ly;
-
-    JoystickValues() {
-        rx = 0; ry = 0; lx = 0; ly = 0;
-    }
 };
 
 class GamepadReader {
@@ -39,11 +35,13 @@ public:
 	        joystick.rx = XBee.parseFloat();
 	        joystick.ly = XBee.parseFloat();
 	        joystick.lx = XBee.parseFloat();
-	        last_buttons_read = buttons_read;0
+	        last_buttons_read = buttons_read;
 	        buttons_read = XBee.readStringUntil('\n');
 
 		} else {
 			new_serial_was_read = false;
+			last_buttons_read = buttons_read;
+			flushInput();
 		}
 	}
 
@@ -54,7 +52,7 @@ public:
 	bool buttonWasSinglePressed(String button) {
 		bool button_is_pressed = buttonWasReadInBuffer(buttons_read, button);
 		bool button_was_pressed = buttonWasReadInBuffer(last_buttons_read, button);
-		return (buttons_is_pressed && !button_was_pressed);
+		return (button_is_pressed && !button_was_pressed);
 	}
 
 	bool buttonIsBeingPressed(String button) {
@@ -70,6 +68,11 @@ private:
 public:
 	bool newSerialWasRead() {
 		return new_serial_was_read;
+	}
+
+	void flushInput() {
+		buttons_read = "";
+		joystick = JoystickValues();
 	}
 
 };
