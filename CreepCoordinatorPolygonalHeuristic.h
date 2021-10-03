@@ -12,35 +12,34 @@
 #define CURR_AREA_WEIGHT 1
 
 
-// creepTimingParameters FAST_TROT_PARAMETERS {0.35, 	0.6, 	// prepare
-// 											0.1, 	0, 		// lift
-// 											0.15, 	0, 		// plant
-// 											0.25, 	0};		// return
-
-// creepTimingParameters SLOW_TROT_PARAMETERS {.7, 	0.0, 	// prepare
-// 											.1, 	0, 		// lift
-// 											.15, 	0, 		// plant
-// 											.5, 	0};		// return
-
-creepTimingParameters FAST_CREEP_PARAMETERS {0.35,   0.14,    // prepare
-                                            0.1,    0.1,      // lift
-                                            0.15,   0.15,      // plant
-                                            0.25,   0.25};     // return
-
-creepTimingParameters SLOW_CREEP_PARAMETERS {.7,     0.7,    // prepare
-                                            .1,     .1,      // lift
-                                            .15,    .15,      // plant
-                                            .5,     .5};     // return
-
 
 class CreepCoordinatorPolygonal : public CreepGaitCoordinator {
 private:
-	bool using_slow_gait = true;
+    // creepTimingParameters FAST_TROT_PARAMETERS {0.35,    0.6,    // prepare
+    //                                          0.1,    0,      // lift
+    //                                          0.15,   0,      // plant
+    //                                          0.25,   0};     // return
+
+    // creepTimingParameters SLOW_TROT_PARAMETERS {.7,  0.0,    // prepare
+    //                                          .1,     0,      // lift
+    //                                          .15,    0,      // plant
+    //                                          .5,     0};     // return
+
+    const CreepTimingParameters FAST_CREEP_PARAMETERS {0.35,   0.14,    // prepare
+                                                0.1,    0.1,      // lift
+                                                0.15,   0.15,      // plant
+                                                0.25,   0.25};     // return
+
+    const CreepTimingParameters SLOW_CREEP_PARAMETERS {.7,     0.7,    // prepare
+                                                .1,     .1,      // lift
+                                                .15,    .15,      // plant
+                                                .5,     .5};     // return
+
+    Point default_body_position = Point(0, 0, BODY_DEFAULT_HEIGHT);
 
 public: 
-    CreepCoordinatorPolygonal(Dog *ndog) {
-        super(dog);
-        timingParameters = SLOW_CREEP_PARAMETERS;
+    CreepCoordinatorPolygonal(RobotDog *ndog) : CreepGaitCoordinator(ndog) {
+        timingParameters = FAST_CREEP_PARAMETERS;
     }
     
 	void useSlowGait() {
@@ -54,14 +53,14 @@ public:
 	footCommand getNextFootCommand() {
 		footCommand next_foot_command;
 		next_foot_command.foot_to_move = chooseFootToMove();
-		next_foot_command.foot_anchor_before_motion_oC = calculateNextLiftedFootAnchorBeforeMotion_fFoC();
+		next_foot_command.desired_foot_anchor_from_original_centroid_oC = calculateNextLiftedFootAnchorFromOriginalCentroid_fFoC(next_foot_command.foot_to_move);
         return next_foot_command;
 
 	}
 
 	COMCommand getNextCOMCommand() {
 		COMCommand next_COM_command;
-		next_COM_command.COM_location = default_body_position;
+		next_COM_command.desired_COM_from_original_centroid_oC = default_body_position;
         next_COM_command.motion_time = getTimingParameters().prepare_motion_time;
         return next_COM_command;
 	}
@@ -71,11 +70,6 @@ public:
     // negatively penalize a negative foot area?
     // maximize next 3-foot area combinations
     int chooseFootToMove() {
-        if (overrideFootChoice) {
-            overrideFootChoice = false;
-            return overridden_foot_to_move;
-        }
-
         float max_move_score = 0;
         int foot_to_move = 0;
         for (int i = 0; i < NUM_LEGS; i++) {
@@ -90,8 +84,8 @@ public:
 
     float calculateFootLiftChoiceScore(int foot_i) {
         float lost_distance_from_not_moving;
-        Point current_anchor_fFoC = dog->getFootPositionFromBody(foot_i, Frame::FLOOR) - dog->getCentroidPositionFromBody(Frame::FLOOR);
-        Point next_anchor_fFoC = calculateNextLiftedFootAnchorBeforeMotion_fFoC(foot_i);
+        Point current_anchor_fFoC = dog_r->getFootPositionFromBody(foot_i, Frame::FLOOR) - dog_r->getCentroidPositionFromBody(Frame::FLOOR);
+        Point next_anchor_fFoC = calculateNextLiftedFootAnchorFromOriginalCentroid_fFoC(foot_i);
         lost_distance_from_not_moving = (next_anchor_fFoC - current_anchor_fFoC).norm();
         float normalized_lost_distance = lost_distance_from_not_moving/MAX_LOST_LEG_DISTANCE;
         if (normalized_lost_distance > 1) {
@@ -132,9 +126,9 @@ public:
     }
 
     // from CURRENT centroid
-    Point calculateNextLiftedFootAnchorBeforeMotion_fFoC(int foot_i) {
-        Point default_anchor = dog->getDefaultFootPosition(foot_i, Frame::BODY) + Point(0, 0, dog->getStartingHeight());
-        return (default_anchor + desired_motion.translation) * (current_rotation + desired_motion.leg_rotation); // body frame movement
+    Point calculateNextLiftedFootAnchorFromOriginalCentroid_fFoC(int foot_i) {
+        Point default_anchor = dog_r->getDefaultFootPosition(foot_i, Frame::BODY) + Point(0, 0, dog_r->getStartingHeight());
+        return (default_anchor + desired_motion.translation) * (desired_motion.current_rotation + desired_motion.leg_rotation); // body frame movement
     }
 
     // places a list of 4 into support_polygons
@@ -143,9 +137,9 @@ public:
         Point foot_positions[NUM_LEGS];
         for (int i = 0; i < NUM_LEGS; i++) {
             if (i == foot_i) {
-                foot_positions[i] = calculateNextLiftedFootAnchor_fFoC(i);
+                foot_positions[i] = calculateNextLiftedFootAnchorFromOriginalCentroid_fFoC(i);
             } else {
-                foot_positions[i] = dog->getAnchorPoint_oC(i, Frame::FLOOR); 
+                foot_positions[i] = dog_r->getAnchorPoint_oC(i, Frame::FLOOR); 
             }
         }
 
@@ -164,6 +158,6 @@ public:
         }
     }
 
-}
+};
 
 #endif

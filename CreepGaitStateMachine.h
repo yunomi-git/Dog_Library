@@ -3,12 +3,12 @@
 
 #include "Dog.h"
 #include "CreepStateInfo.h"
-#include "CreepGaitCoordinator.h"
+#include "CreepGaitcoordinator.h"
 #include "CreepTimingParameters.h"
+#include "DesiredCreepMotionCommand.h"
 
 
 #define LIFT_HEIGHT 30
-#define BODY_DEFAULT_HEIGHT 110
 
 #define ROTATION_LEG_INPUT_MULTIPLIER 3
 
@@ -20,32 +20,18 @@ class CreepGaitStateMachine {
     typedef void (CreepGaitStateMachine::*actionFunction)(ActionMode);
     RobotDog *dog;
 
-    struct CreepMotionCommand {
-        Point translation;
-        Rot rotation;
-        Rot leg_rotation;
-
-        CreepMotionCommand() {
-            translation = POINT_ZERO;
-            rotation = ROT_ZERO;
-            leg_rotation = ROT_ZERO;
-        }
-    };
-
-    CreepMotionCommand desired_motion;
+    DesiredCreepMotionCommand desired_motion;
     Rot body_orientation_modification;
     int state;
     #define NUM_CREEP_STATES 5
     CreepStateInfo creep_states[NUM_CREEP_STATES];
     actionFunction actions[NUM_CREEP_STATES];
 
-    Point default_body_position = Point(0, 0, BODY_DEFAULT_HEIGHT);
     Rot current_rotation = ROT_ZERO;
     Point current_centroid_offset_from_original_centroid = POINT_ZERO;
-    Point next_foot_anchor_oC;
     Point next_foot_position_oBfF;
     Point lift_foot_position_oBfF;
-    Point current_body_position_goal_oCfF = default_body_position;
+    Point current_body_position_goal_oCfF;
 
     bool tracking_external_orientation = false;
     bool move_in_ground_frame = false;
@@ -56,11 +42,12 @@ class CreepGaitStateMachine {
     COMCommand nextCOMCommand;
 
 public:
-    CreepGaitStateMachine(CreepGaitCoordinator *ngait_coordinator) {
-        dog = gait_coordinator.getDogReference();
+    CreepGaitStateMachine(RobotDog *ndog_r, CreepGaitCoordinator *ngait_coordinator) {
+        dog = ndog_r;
         gait_coordinator = ngait_coordinator;
 
-        CreepTimingParameters timing_parameters = gait_coordinator.getTimingParameters();
+        CreepTimingParameters timing_parameters = gait_coordinator->getTimingParameters(); // TODO this gets set on declaration...cant switch tmiing from coordinator.
+        current_body_position_goal_oCfF = gait_coordinator->getDefaultBodyPosition();
 
         state = 0;
         actions[0]      = &CreepGaitStateMachine::waitForMotionCommand;
@@ -80,9 +67,12 @@ public:
     }
 
     void operate() {
+
         if (getCurrentCreepState()->isInStartup()) {
+            Serial.println(state);
             doCurrentStateAction(STARTUP);
             getCurrentCreepState()->setStarted();
+            Serial.println("startup done");
         }
         
         doCurrentStateAction(NORMAL);
@@ -92,10 +82,12 @@ public:
         }
 
         if (getCurrentCreepState()->isTimeToEnd()) {
+            Serial.println("end beginning");
             doCurrentStateAction(END);
             int next_state = getCurrentCreepState()->getNextState(); 
             getCurrentCreepState()->reset();
             switchToState(next_state);
+            Serial.println("ended");
         }
     }
 
@@ -130,12 +122,17 @@ private:
 
     void prepareCOM(ActionMode mode) {
         if (mode == STARTUP) {
-            Point body_position_from_original_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR));;
+            Serial.println("asdf0");
+            Point body_position_from_original_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR));
+            body_position_from_original_centroid.print();
             dog->switchFootStance(nextFootCommand.foot_to_move, FootStance::SET);
             Point body_position_from_swing_phase_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR));
             current_centroid_offset_from_original_centroid = body_position_from_swing_phase_centroid - body_position_from_original_centroid;
+
+            current_centroid_offset_from_original_centroid.print();
             
-            current_body_position_goal_oCfF = nextCOMCommand.desired_COM_location_before_motion_oC;
+            current_body_position_goal_oCfF = nextCOMCommand.desired_COM_from_original_centroid_oC;
+            current_body_position_goal_oCfF.print();
             float time = nextCOMCommand.motion_time;
 
             if (move_in_ground_frame) {
@@ -173,7 +170,7 @@ private:
     void plantFoot(ActionMode mode) {
         if (mode == STARTUP) {
             Point centroid_position = -dog->getBodyPositionFromCentroid(Frame::FLOOR);
-            next_foot_position_oBfF = (centroid_position + nextFootCommand.foot_anchor_before_motion_oC) - current_centroid_offset_from_original_centroid;
+            next_foot_position_oBfF = (centroid_position + nextFootCommand.desired_foot_anchor_from_original_centroid_oC) - current_centroid_offset_from_original_centroid;
 
             float time = getCurrentCreepState()->getMotionPeriod();
             dog->moveFootToPositionFromBodyInTime(nextFootCommand.foot_to_move, next_foot_position_oBfF, Frame::FLOOR, time);
@@ -196,12 +193,12 @@ private:
         if (mode == STARTUP) {
             float time = getCurrentCreepState()->getMotionPeriod();
 
-            current_body_position_goal_oCfF = default_body_position;
+            current_body_position_goal_oCfF = gait_coordinator->getDefaultBodyPosition();
 
             if (move_in_ground_frame) {
-                dog->moveBodyToPositionFromCentroidInTime(default_body_position, Frame::GROUND, time);
+                dog->moveBodyToPositionFromCentroidInTime(current_body_position_goal_oCfF, Frame::GROUND, time);
             } else {
-                dog->moveBodyToPositionFromCentroidInTime(default_body_position, Frame::FLOOR, time);
+                dog->moveBodyToPositionFromCentroidInTime(current_body_position_goal_oCfF, Frame::FLOOR, time);
                 dog->moveBodyToOrientationInTime(current_rotation + body_orientation_modification, time);
             }
         } else if (mode == NORMAL) {
@@ -223,27 +220,26 @@ public:
             getCurrentCreepState()->setNextState(1);
 
             //calculate desired foot, motion, etc
-            gait_coordinator.receiveDogState();
-            gait_coordinator.recieveDesiredMotion();
-            nextFootCommand = gait_coordinator.getNextFootCommand();
-            nextCOMCommand = gait_coordinator.getNextCOMCommand();
+            gait_coordinator->receiveDesiredMotion(desired_motion);
+            nextFootCommand = gait_coordinator->getNextFootCommand();
+            nextCOMCommand = gait_coordinator->getNextCOMCommand();
         }
     }
 
-    void sendMotionCommandUsingFoot(int foot_i, float x_motion, float y_motion, float yaw_motion) {
-        if (state == 0) {
-            desired_motion.translation = Point(x_motion, y_motion, 0);
-            desired_motion.rotation = Rot(0, 0, yaw_motion);
-            desired_motion.leg_rotation = desired_motion.rotation * ROTATION_LEG_INPUT_MULTIPLIER;
+    // void sendMotionCommandUsingFoot(int foot_i, float x_motion, float y_motion, float yaw_motion) {
+    //     if (state == 0) {
+    //         desired_motion.translation = Point(x_motion, y_motion, 0);
+    //         desired_motion.rotation = Rot(0, 0, yaw_motion);
+    //         desired_motion.leg_rotation = desired_motion.rotation * ROTATION_LEG_INPUT_MULTIPLIER;
 
-            getCurrentCreepState()->endEarly();
-            getCurrentCreepState()->setNextState(1);
+    //         getCurrentCreepState()->endEarly();
+    //         getCurrentCreepState()->setNextState(1);
 
-            overrideFootChoice = true;
-            nextFootCommand.foot_to_move = foot_i;
-            //nextFootCommand.foot_anchor = foot_i;
-        }
-    }
+    //         overrideFootChoice = true;
+    //         nextFootCommand.foot_to_move = foot_i;
+    //         //nextFootCommand.foot_anchor = foot_i;
+    //     }
+    // }
 
     void sendReturnToCOMCommand() {
         if (state == 0) {

@@ -635,7 +635,7 @@ public:
     }
     #endif
 
-    #ifdef DEBUG_COMPUTATION
+    // #ifdef DEBUG_COMPUTATION
     // Manually feed in orientation values
     void feedIMU(Rot orientation) {
         meas_body_orientation_fG2B = orientation;
@@ -669,7 +669,7 @@ public:
     //     Point foot_pos_G = foot[i]->getCurrentFootPositionFromShoulder(Frame::GROUND);
     //     Serial.print("Leg "); Serial.print(i); Serial.print(": "); foot_pos_G.print();
     // }
-    #endif
+    // #endif
 
 };
 
