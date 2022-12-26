@@ -122,7 +122,6 @@ private:
 
     void prepareCOM(ActionMode mode) {
         if (mode == STARTUP) {
-            Serial.println("asdf0");
             Point body_position_from_original_centroid = -(dog->getBodyPositionFromCentroid(Frame::FLOOR));
             body_position_from_original_centroid.print();
             dog->switchFootStance(nextFootCommand.foot_to_move, FootStance::SET);

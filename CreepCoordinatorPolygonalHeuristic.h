@@ -15,16 +15,6 @@
 
 class CreepCoordinatorPolygonal : public CreepGaitCoordinator {
 private:
-    // creepTimingParameters FAST_TROT_PARAMETERS {0.35,    0.6,    // prepare
-    //                                          0.1,    0,      // lift
-    //                                          0.15,   0,      // plant
-    //                                          0.25,   0};     // return
-
-    // creepTimingParameters SLOW_TROT_PARAMETERS {.7,  0.0,    // prepare
-    //                                          .1,     0,      // lift
-    //                                          .15,    0,      // plant
-    //                                          .5,     0};     // return
-
     const CreepTimingParameters FAST_CREEP_PARAMETERS {0.35,   0.14,    // prepare
                                                 0.1,    0.1,      // lift
                                                 0.15,   0.15,      // plant
